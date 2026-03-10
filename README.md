@@ -24,7 +24,7 @@ flox build triton-onnxruntime-backend             # ~5 min, links against cached
 ```
 
 Build output appears at `./result-triton-server/`, `./result-triton-python-backend/`,
-and `./result-triton-onnxruntime-backend/`.
+`./result-onnxruntime-cuda/`, and `./result-triton-onnxruntime-backend/`.
 
 ## Build Output
 
