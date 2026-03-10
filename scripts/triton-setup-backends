@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# triton-setup-backends — Assemble backend directory at activation time.
+#
+# Called from the Flox on-activate hook. Builds a unified backend directory
+# under $FLOX_ENV_CACHE/backends/ by combining:
+#
+#   Tier 1: Package-provided backends from $FLOX_ENV/backends/
+#           (symlinked wholesale — e.g. python, onnxruntime)
+#
+#   Tier 2: Repo-local backends from $FLOX_ENV_PROJECT/backends/
+#           (assembled with per-file symlinks, python stub injected)
+#
+# This avoids committing machine-specific Nix store paths to git.
+
+set -euo pipefail
+
+# Resolve _lib.sh relative to this script's installed location.
+_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=_lib.sh
+source "${_self_dir}/_lib.sh"
+
+lib::require_var FLOX_ENV
+lib::require_var FLOX_ENV_CACHE
+
+FLOX_ENV_PROJECT="${FLOX_ENV_PROJECT:-}"
+
+readonly CACHE_BACKENDS="${FLOX_ENV_CACHE}/backends"
+readonly ENV_BACKENDS="${FLOX_ENV}/backends"
+readonly PROJECT_BACKENDS="${FLOX_ENV_PROJECT:+${FLOX_ENV_PROJECT}/backends}"
+
+# ── helpers ──────────────────────────────────────────────────────────
+
+_is_python_backend() {
+  local dir="$1"
+  [[ -f "${dir}/model.py" ]] && ! compgen -G "${dir}/libtriton_*.so" >/dev/null
+}
+
+_symlink_files() {
+  # Create per-file symlinks from $src into $dst, skipping __pycache__.
+  local src="$1" dst="$2"
+  local entry name
+  for entry in "${src}"/*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    name="$(basename "$entry")"
+    [[ "$name" != "__pycache__" ]] || continue
+    ln -sf "$entry" "${dst}/${name}"
+  done
+}
+
+# ── main ─────────────────────────────────────────────────────────────
+
+lib::log "triton-setup-backends: assembling ${CACHE_BACKENDS}"
+
+# Idempotent: wipe and recreate the cache backends dir.
+rm -rf "$CACHE_BACKENDS"
+mkdir -p "$CACHE_BACKENDS"
+
+# Track which backend names were handled by Tier 1.
+declare -A tier1_names=()
+
+# ── Tier 1: package-provided backends ────────────────────────────────
+if [[ -d "$ENV_BACKENDS" ]]; then
+  for entry in "${ENV_BACKENDS}"/*/; do
+    [[ -d "$entry" ]] || continue
+    name="$(basename "$entry")"
+    ln -sf "$entry" "${CACHE_BACKENDS}/${name}"
+    tier1_names["$name"]=1
+    lib::verbose "  tier1: ${name} -> ${entry}"
+  done
+fi
+
+# ── Tier 2: repo-local backends ─────────────────────────────────────
+if [[ -n "$PROJECT_BACKENDS" && -d "$PROJECT_BACKENDS" ]]; then
+  for entry in "${PROJECT_BACKENDS}"/*/; do
+    [[ -d "$entry" ]] || continue
+    # Only handle real directories (not symlinks — those are Tier 1 artifacts).
+    [[ ! -L "${entry%/}" ]] || continue
+    name="$(basename "$entry")"
+
+    # Skip if Tier 1 already owns this name.
+    [[ -z "${tier1_names[$name]+x}" ]] || continue
+
+    local_dir="${CACHE_BACKENDS}/${name}"
+    mkdir -p "$local_dir"
+    _symlink_files "$entry" "$local_dir"
+
+    # Inject python backend stub if this is a Python-based backend.
+    if _is_python_backend "$entry"; then
+      local python_dir="${ENV_BACKENDS}/python"
+      if [[ -d "$python_dir" ]]; then
+        ln -sf "${python_dir}/triton_python_backend_stub" "${local_dir}/triton_python_backend_stub"
+        ln -sf "${python_dir}/triton_python_backend_utils.py" "${local_dir}/triton_python_backend_utils.py"
+        lib::verbose "  tier2: ${name} (python stub injected)"
+      else
+        lib::warn "  tier2: ${name} needs python backend stub but ${python_dir} not found"
+      fi
+    else
+      lib::verbose "  tier2: ${name}"
+    fi
+  done
+fi
+
+lib::log "triton-setup-backends: done"

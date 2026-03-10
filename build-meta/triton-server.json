@@ -1,7 +1,7 @@
 {
-  "build_version": 10,
+  "build_version": 12,
   "force_increment": 0,
-  "git_rev": "c4a14de09992f5749ee99c68b7720dc3ee51d6a5",
-  "git_rev_short": "c4a14de",
-  "changelog": "Initial versioned build. Bundled runtime scripts (triton-serve, triton-preflight, triton-resolve-model, _lib.sh) into $out/bin/."
+  "git_rev": "0dcdfa59aae5a4a44c66ca217b871dd25c14242f",
+  "git_rev_short": "0dcdfa5",
+  "changelog": "Add triton-setup-backends script for portable backend discovery at activation time."
 }
