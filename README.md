@@ -213,6 +213,17 @@ release expects.
 
 See `CLAUDE.md` for detailed notes on every sandbox challenge encountered.
 
+## Backends Not Built Here
+
+Not every Triton backend requires a custom Nix build. The **vLLM backend** is pure
+Python and needs no compilation — its engine (`vllm` v0.15.1) is available directly
+from nixpkgs as `flox-cuda/python3Packages.vllm`. The backend source files (from
+[triton-inference-server/vllm_backend](https://github.com/triton-inference-server/vllm_backend)
+r26.02) are checked into the runtime repo at `backends/vllm/` as plain `.py` files.
+
+If nixpkgs stops shipping a compatible vLLM version in the future, a build expression
+would need to be added here following the same patterns as the other backends.
+
 ## Verified Store Paths
 
 Current build outputs (for use in `store-path` references from consuming environments):
