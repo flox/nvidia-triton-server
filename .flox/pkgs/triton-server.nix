@@ -366,6 +366,14 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
     export CMAKE_POLICY_VERSION_MINIMUM=3.5
   '';
 
+  postInstall = ''
+    cp ${../../scripts/_lib.sh} $out/bin/_lib.sh
+    cp ${../../scripts/triton-preflight} $out/bin/triton-preflight
+    cp ${../../scripts/triton-resolve-model} $out/bin/triton-resolve-model
+    cp ${../../scripts/triton-serve} $out/bin/triton-serve
+    chmod +x $out/bin/triton-{preflight,resolve-model,serve}
+  '';
+
   # Move lib64 contents to lib before fixupPhase tries (and fails due to subdirs)
   preFixup = ''
     if [ -d "$out/lib64" ]; then
