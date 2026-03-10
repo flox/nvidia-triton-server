@@ -32,6 +32,10 @@ and `./result-triton-onnxruntime-backend/`.
 result-triton-server/
   bin/
     tritonserver          # Main server binary (18 MB)
+    triton-serve          # Server launcher script
+    triton-preflight      # Pre-flight validation script
+    triton-resolve-model  # Model provisioning script
+    _lib.sh               # Shared library sourced by the scripts
     simple                # Example: single model
     multi_server          # Example: multiple server instances
     memory_alloc          # Example: custom memory allocation
@@ -229,7 +233,7 @@ would need to be added here following the same patterns as the other backends.
 Current build outputs (for use in `store-path` references from consuming environments):
 
 ```
-triton-server:              /nix/store/0fgkz60kl9pfl541p1k9pwvw4x1lhgbm-triton-server-2.66.0
+triton-server:              /nix/store/383pyayhwglsv3ywgzlzaf3pd2i72xmq-triton-server-2.66.0
 triton-python-backend:      /nix/store/yhk1sv3ycny5k27nyfimsa4pb9xdin9y-triton-python-backend-2.66.0
 onnxruntime-cuda:           /nix/store/3hys619h5k6bdsp6c2jf2r378q63h354-onnxruntime-cuda-1.24.2
 triton-onnxruntime-backend: /nix/store/x7wsykzn8xrwn1vrf6a7h6k1193i5jcd-triton-onnxruntime-backend-2.66.0
