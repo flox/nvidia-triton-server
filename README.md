@@ -151,6 +151,38 @@ Built for: Ampere (sm_80, sm_86), Ada Lovelace (sm_89), Hopper (sm_90).
 
 Newer GPUs (Blackwell sm_100+) work via PTX JIT compilation.
 
+## Build Versioning
+
+Each publishable package embeds a version marker at
+`$out/share/<pname>/flox-build-version-<N>` containing the build number, git revision,
+and a changelog. This provides provenance tracking for every store path.
+
+Version metadata is stored in `build-meta/<package>.json` and read by the Nix
+expressions at eval time. Before each `flox build` or `flox publish`, update the JSON
+with the current git rev count and a description of what changed, then commit.
+
+```bash
+# Check current build version
+cat result-triton-server/share/triton-server/flox-build-version-*
+
+# Inspect a published store path
+cat /nix/store/...-triton-server-2.66.0/share/triton-server/flox-build-version-*
+```
+
+Marker contents:
+
+```
+build-version: 10
+upstream-version: 2.66.0
+upstream-tag: r26.02
+git-rev: c4a14de09992f5749ee99c68b7720dc3ee51d6a5
+git-rev-short: c4a14de
+force-increment: 0
+changelog: Initial versioned build. Bundled runtime scripts.
+```
+
+See `CLAUDE.md` for the full pre-build workflow.
+
 ## Build Details
 
 The Nix expression at `.flox/pkgs/triton-server.nix` pre-fetches 12 GitHub

@@ -29,6 +29,59 @@ flox build onnxruntime-cuda                      # ~1 hr, cached after first bui
 flox build triton-onnxruntime-backend             # ~5 min
 ```
 
+## Build Versioning (MANDATORY before every build/publish)
+
+Each publishable package writes a marker file at
+`$out/share/<pname>/flox-build-version-<N>`. The version info is read from
+`build-meta/<package>.json` at Nix eval time — **NOT** from git (builtins.fetchGit
+fails during `flox publish` because the source is copied to a store path with no .git).
+
+### Pre-build checklist
+
+Before running `flox build` or `flox publish` for any package, update its JSON:
+
+1. Compute the new build version: `git rev-list --count HEAD` + `force_increment`
+   (the count includes the commit you're about to make)
+2. Capture the current git rev: `git rev-parse HEAD` / `git rev-parse --short HEAD`
+3. Write a human-readable changelog describing what changed in this build
+4. Commit the updated JSON (and any .nix changes) before building
+
+Example — updating triton-server before a build:
+
+```bash
+# After making changes to the .nix file, update the metadata:
+# build_version = $(git rev-list --count HEAD) + 1 (for the commit we're about to make)
+# Then: git add build-meta/triton-server.json .flox/pkgs/triton-server.nix && git commit
+# Then: flox build triton-server
+```
+
+### JSON schema
+
+```json
+{
+  "build_version": 10,
+  "force_increment": 0,
+  "git_rev": "c4a14de09992f5749ee99c68b7720dc3ee51d6a5",
+  "git_rev_short": "c4a14de",
+  "changelog": "Description of what changed in this build."
+}
+```
+
+- **build_version**: `git rev-list --count HEAD` + `force_increment` (monotonically increasing)
+- **force_increment**: Manually bump this to increase the version without a code change
+- **git_rev** / **git_rev_short**: The commit that produced this build
+- **changelog**: Human-readable; what changed vs the previous build
+
+### Force increment
+
+To bump the version without code changes (e.g., rebuild with different flags):
+increment `force_increment` in the JSON, update `build_version` accordingly, commit,
+and rebuild.
+
+### Marker file location
+
+After build: `result-<pkg>/share/<pname>/flox-build-version-<N>`
+
 ## Architecture Decisions
 
 ### Why Nix Expression (not Manifest Build)
