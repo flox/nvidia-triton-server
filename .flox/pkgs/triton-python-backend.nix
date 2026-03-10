@@ -19,11 +19,10 @@ let
   tag = "r26.02";
 
   # ---------------------------------------------------------------------------
-  # Build versioning — auto-increments from git rev count
+  # Build versioning — pre-computed in build-meta/*.json before each build
   # ---------------------------------------------------------------------------
-  repoGit = builtins.fetchGit { url = ../..; };
   buildMeta = builtins.fromJSON (builtins.readFile ../../build-meta/triton-python-backend.json);
-  buildVersion = repoGit.revCount + buildMeta.force_increment;
+  buildVersion = buildMeta.build_version;
   pname = "triton-python-backend";
 
   buildPython = python3.withPackages (ps: [
@@ -174,8 +173,8 @@ gcc14Stdenv.mkDerivation {
 build-version: ${toString buildVersion}
 upstream-version: ${version}
 upstream-tag: ${tag}
-git-rev: ${repoGit.rev}
-git-rev-short: ${repoGit.shortRev}
+git-rev: ${buildMeta.git_rev}
+git-rev-short: ${buildMeta.git_rev_short}
 force-increment: ${toString buildMeta.force_increment}
 changelog: ${buildMeta.changelog}
 MARKER
