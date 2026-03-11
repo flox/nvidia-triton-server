@@ -376,13 +376,13 @@ triton-python-backend:      /nix/store/yhk1sv3ycny5k27nyfimsa4pb9xdin9y-triton-p
 onnxruntime-cuda:           /nix/store/3hys619h5k6bdsp6c2jf2r378q63h354-onnxruntime-cuda-1.24.2
 triton-onnxruntime-backend: /nix/store/x7wsykzn8xrwn1vrf6a7h6k1193i5jcd-triton-onnxruntime-backend-2.66.0
 triton-tensorrt-backend:    /nix/store/alb9fcxjq0pckb2c6dq8k5994yb5gj88-triton-tensorrt-backend-2.66.0
-triton-tensorrtllm-backend: /nix/store/msjd49w3la9gzbp2spbrrh6xdjcsk4dz-triton-tensorrtllm-backend-2.66.0
+triton-tensorrtllm-backend: /nix/store/bgfpnsx7fpmhc3vm55n9aiqzyajl5riy-triton-tensorrtllm-backend-2.66.0
 ```
 
 Published packages (triton-server, triton-python-backend, triton-onnxruntime-backend,
-triton-tensorrt-backend, triton-tensorrtllm-backend) are available from the meetrlyio
-catalog via `pkg-path` references. The `store-path` references above are for debugging
-and direct testing only.
+triton-tensorrt-backend) are available from the meetrlyio catalog via `pkg-path`
+references. The triton-tensorrtllm-backend is pending publish. The `store-path`
+references above are for debugging and direct testing only.
 
 ## License
 
