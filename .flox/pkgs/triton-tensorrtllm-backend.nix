@@ -21,21 +21,26 @@ let
   buildMeta = builtins.fromJSON (builtins.readFile ../../build-meta/triton-tensorrtllm-backend.json);
   buildVersion = buildMeta.build_version;
 
-  bundle = pkgs.fetchurl {
-    url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz";
-    hash = "sha256-uwT05SXWs2roBg0SyH4SSxweitXe5FiXrrNYGOAZUzU=";
+  # Bundle is split into two parts to stay under GitHub Releases' 2 GB file size limit.
+  # Parts are concatenated during unpackPhase to reconstruct the original tarball.
+  bundlePart0 = pkgs.fetchurl {
+    url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part0";
+    hash = "sha256-x8ee8bFUcPxtc5qI8rCUV86ioFboiTYZzQWoNMwpW+s=";
+  };
+  bundlePart1 = pkgs.fetchurl {
+    url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part1";
+    hash = "sha256-V5WLkMe0et4QE2wppXJD8G7ksiBoUU40Ncvm+yzjVYc=";
   };
 
 in pkgs.stdenv.mkDerivation {
   inherit pname version;
 
-  src = bundle;
+  src = bundlePart0;
 
-  # The tarball has no top-level directory; unpack into build dir
   sourceRoot = ".";
   unpackPhase = ''
     mkdir -p source
-    tar -xzf $src -C source
+    cat ${bundlePart0} ${bundlePart1} | tar -xzf - -C source
     cd source
   '';
 

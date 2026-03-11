@@ -11,6 +11,9 @@ from source. The build output is at `./result-triton-server/`.
 - `.flox/pkgs/triton-python-backend.nix` - Python backend expression (callPackage)
 - `.flox/pkgs/onnxruntime-cuda.nix` - ONNX Runtime C++ library (standalone nixpkgs-pin)
 - `.flox/pkgs/triton-onnxruntime-backend.nix` - ORT backend expression (callPackage)
+- `.flox/pkgs/tensorrt-cuda.nix` - TensorRT SDK (standalone nixpkgs-pin, build dep only)
+- `.flox/pkgs/triton-tensorrt-backend.nix` - TensorRT backend expression (callPackage)
+- `.flox/pkgs/triton-tensorrtllm-backend.nix` - TensorRT-LLM backend (NGC bundle extraction)
 - `.flox/env/manifest.toml` - Flox manifest (minimal, just for `flox build`)
 - `result-triton-server/` - Build output symlink
 
@@ -27,6 +30,13 @@ flox build triton-python-backend
 git add .flox/pkgs/onnxruntime-cuda.nix .flox/pkgs/triton-onnxruntime-backend.nix
 flox build onnxruntime-cuda                      # ~1 hr, cached after first build
 flox build triton-onnxruntime-backend             # ~5 min
+
+git add .flox/pkgs/tensorrt-cuda.nix .flox/pkgs/triton-tensorrt-backend.nix
+flox build tensorrt-cuda                          # fast, pre-built SDK
+flox build triton-tensorrt-backend                # ~2 min
+
+git add .flox/pkgs/triton-tensorrtllm-backend.nix
+flox build triton-tensorrtllm-backend             # fast, pre-built bundle
 ```
 
 ## Build Versioning (MANDATORY before every build/publish)
@@ -150,6 +160,44 @@ Triton r26.02 specifies ORT 1.24.1, but we use 1.24.2 (patch release, ABI-compat
 This reuses exact source hashes from the `build-onnx-runtime` repo's `ort-1.24` branch.
 If issues arise, pin to 1.24.1 by changing the `tag` and clearing the `hash`.
 
+### TensorRT Backend: Two-Expression Architecture
+
+Same pattern as the ORT backend (slow dep cached separately), except the TRT SDK is fast
+(pre-built, no compilation required):
+
+1. **`tensorrt-cuda.nix`** — Uses standalone nixpkgs-pin pattern (same as
+   `onnxruntime-cuda.nix`). Provides the TRT SDK via `cudaPackages.tensorrt`, which is
+   a multi-output derivation — must use `trt.include` and `trt.lib`, not bare `trt`.
+   This is a build dependency only (not published to the catalog).
+
+2. **`triton-tensorrt-backend.nix`** — Uses callPackage convention (same as other backends).
+   Same sandbox adaptations: `/etc/os-release` stub, tests disabled, `CUDA_ARCH_LIST` +
+   `CUDAARCHS` env vars. Backend's own `CMakeLists.txt:57` reads `/etc/os-release` and
+   needs the same `substituteInPlace` patch as the core repo. Pre-fetches 4 repos
+   (tensorrt_backend + core/common/backend shared with all other backends).
+
+### TensorRT-LLM Backend: NGC Container Extraction
+
+Fundamentally different from all other backends — **not built from source**. TensorRT-LLM
+cannot be built via Nix due to:
+- 63 GB build footprint
+- Proprietary components (custom NVIDIA PyTorch, internal TRT-LLM build system)
+- Complex transitive dependency chain (NCCL, OpenMPI, custom CUDA 13.x)
+
+Approach: Extract pre-built binaries from the NGC container
+`nvcr.io/nvidia/tritonserver:26.02-trtllm-python-py3`, package into a tarball, host on
+GitHub Releases, and use `fetchurl` + `patchelf` in the Nix expression (no cmake, no
+source compilation).
+
+Key differences from source-built backends:
+- Uses `fetchurl` (not `fetchFromGitHub`) — downloads a pre-built tarball
+- Uses `patchelf` for RPATH fixing (not Nix's automatic RPATH handling)
+- Bundles its own CUDA 13.x, NCCL, OpenMPI, and libstdc++ (SONAME isolation from system libs)
+- No callPackage, no sandbox build challenges — just unpack and patch
+
+Container extraction was done with `skopeo` (OCI format pull to `/mnt/scratch/trtllm-container`).
+The bundle tarball lives at `/mnt/scratch/trtllm-backend-bundle-26.02.tar.gz`.
+
 ## Critical Nix Sandbox Challenges (and solutions)
 
 ### 1. No Network Access
@@ -216,6 +264,30 @@ used for stub generation during the wheel build. This is why `ps.mypy` is includ
 | core | r26.02 | Writable copy needed (shared hash with server/python) |
 | common | r26.02 | Writable copy needed (shared hash with server/python) |
 | backend | r26.02 | Read-only OK (shared hash with server/python) |
+
+## Pre-Fetched Repos: TensorRT Backend (4 total)
+
+| Repo | Version | Notes |
+|------|---------|-------|
+| tensorrt_backend | r26.02 | Main source (src=) |
+| core | r26.02 | Writable copy needed (shared hash with server/python/ort) |
+| common | r26.02 | Writable copy needed (shared hash with server/python/ort) |
+| backend | r26.02 | Read-only OK (shared hash with server/python/ort) |
+
+## TRT-LLM Bundle Contents
+
+The TensorRT-LLM bundle contains ~45 shared libraries extracted from the NGC container.
+These are the transitive runtime dependencies of `libtensorrt_llm.so`:
+
+- **TRT-LLM core:** `libtensorrt_llm.so`, `libnvinfer_plugin_tensorrt_llm.so`
+- **TensorRT:** `libnvinfer.so.10`, `libnvinfer_dispatch.so.10`, `libnvinfer_lean.so.10`
+- **CUDA 13.x:** `libcublas.so.13`, `libcublasLt.so.13`, `libcudart.so.13`, `libcurand.so.10`
+- **NCCL:** `libnccl.so.2` (multi-GPU communication)
+- **OpenMPI:** `libmpi.so.40`, `libopen-rte.so.40`, `libopen-pal.so.40`
+- **System deps:** `libudev.so.1`, `libcap.so.2`, `libstdc++.so.6`
+
+Each library has SONAME symlinks (e.g., `libcublas.so.13` → `libcublas.so.13.0.0.68`).
+The CUDA 13.x SONAMEs don't conflict with system CUDA 12.x.
 
 ## Pre-Fetched Repos: ORT Library (4 total)
 

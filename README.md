@@ -1,6 +1,6 @@
 # Triton Inference Server - Nix Build
 
-Build NVIDIA Triton Inference Server v2.66.0 and its backends (Python, ONNX Runtime) from source using Flox/Nix.
+Build NVIDIA Triton Inference Server v2.66.0 and its backends (Python, ONNX Runtime, TensorRT, TensorRT-LLM) from source using Flox/Nix.
 
 ## Prerequisites
 
@@ -21,10 +21,19 @@ flox build triton-python-backend
 git add .flox/pkgs/onnxruntime-cuda.nix .flox/pkgs/triton-onnxruntime-backend.nix
 flox build onnxruntime-cuda                      # ~1 hr, cached after first build
 flox build triton-onnxruntime-backend             # ~5 min, links against cached ORT
+
+git add .flox/pkgs/tensorrt-cuda.nix .flox/pkgs/triton-tensorrt-backend.nix
+flox build tensorrt-cuda                          # fast, pre-built SDK
+flox build triton-tensorrt-backend                # ~2 min
+
+git add .flox/pkgs/triton-tensorrtllm-backend.nix
+flox build triton-tensorrtllm-backend             # fast, pre-built bundle
 ```
 
 Build output appears at `./result-triton-server/`, `./result-triton-python-backend/`,
-`./result-onnxruntime-cuda/`, and `./result-triton-onnxruntime-backend/`.
+`./result-onnxruntime-cuda/`, `./result-triton-onnxruntime-backend/`,
+`./result-tensorrt-cuda/`, `./result-triton-tensorrt-backend/`, and
+`./result-triton-tensorrtllm-backend/`.
 
 ## Build Output
 
@@ -86,6 +95,29 @@ result-triton-onnxruntime-backend/
 The backend's RPATH is automatically patched by Nix to reference the ORT store path,
 so `libtriton_onnxruntime.so` finds `libonnxruntime.so` at runtime without copying.
 
+```
+result-tensorrt-cuda/
+  (build dependency only — not published, consumed by triton-tensorrt-backend)
+  bin/ include/ lib/ static/           # TensorRT SDK components (multi-output derivation)
+```
+
+```
+result-triton-tensorrt-backend/
+  backends/tensorrt/
+    libtriton_tensorrt.so              # Backend shared library (1.1 MB)
+```
+
+```
+result-triton-tensorrtllm-backend/
+  backends/tensorrtllm/
+    libtriton_tensorrtllm.so           # Backend shared library (757 KB)
+    trtllmExecutorWorker               # TRT-LLM executor process (73 MB)
+  lib/
+    libtensorrt_llm.so                 # TRT-LLM runtime + 40+ bundled libs (3.9 GB total)
+    libnvinfer_plugin_tensorrt_llm.so
+    libnccl.so.2, libmpi.so.40, libcudart.so.13, libcublas.so.13, ...
+```
+
 ## Usage
 
 ```bash
@@ -109,10 +141,23 @@ so `libtriton_onnxruntime.so` finds `libonnxruntime.so` at runtime without copyi
   --model-repository=/path/to/models \
   --backend-directory=./result-triton-onnxruntime-backend/backends
 
-# With multiple backends (symlink both into a combined directory)
+# With the TensorRT backend
+./result-triton-server/bin/tritonserver \
+  --model-repository=/path/to/models \
+  --backend-directory=./result-triton-tensorrt-backend/backends
+
+# With the TensorRT-LLM backend (requires LD_LIBRARY_PATH for bundled libs)
+LD_LIBRARY_PATH=./result-triton-tensorrtllm-backend/lib \
+./result-triton-server/bin/tritonserver \
+  --model-repository=/path/to/models \
+  --backend-directory=./result-triton-tensorrtllm-backend/backends
+
+# With multiple backends (symlink all into a combined directory)
 mkdir -p ./backends
 ln -s $(readlink -f ./result-triton-python-backend/backends/python) ./backends/python
 ln -s $(readlink -f ./result-triton-onnxruntime-backend/backends/onnxruntime) ./backends/onnxruntime
+ln -s $(readlink -f ./result-triton-tensorrt-backend/backends/tensorrt) ./backends/tensorrt
+ln -s $(readlink -f ./result-triton-tensorrtllm-backend/backends/tensorrtllm) ./backends/tensorrtllm
 ./result-triton-server/bin/tritonserver \
   --model-repository=/path/to/models \
   --backend-directory=./backends
@@ -226,6 +271,56 @@ The ONNX Runtime backend is split into two expressions:
   `define.cuda_architectures.cmake` which includes `100f`/`120f` — unsupported by nvcc
   12.8.
 
+## TensorRT Backend
+
+The TensorRT backend follows the same two-expression architecture as the ORT backend:
+
+- **`.flox/pkgs/tensorrt-cuda.nix`** — Provides the TensorRT SDK via `cudaPackages.tensorrt`
+  from nixpkgs. Uses the standalone nixpkgs-pin pattern (same as `onnxruntime-cuda.nix`).
+  TensorRT is a multi-output derivation — use `trt.include` and `trt.lib` (not bare `trt`).
+  Fast build (pre-built SDK, no compilation).
+
+- **`.flox/pkgs/triton-tensorrt-backend.nix`** — Builds the Triton backend shim (~2 min).
+  Uses the same callPackage/sandbox pattern as the other backends: `/etc/os-release` stub,
+  tests disabled, pre-fetched repos. Links against the TRT SDK from `tensorrt-cuda.nix`.
+  RPATH is patched to reference the TRT lib store path.
+
+Pre-fetches 4 repos (tensorrt_backend + core/common/backend shared with server and other backends).
+
+## TensorRT-LLM Backend (NGC Extraction)
+
+The TRT-LLM backend is fundamentally different from all other backends — it is **not built
+from source**. TensorRT-LLM cannot be feasibly built via Nix due to its 63 GB build footprint,
+proprietary components, and tight coupling with a custom NVIDIA PyTorch build.
+
+Instead, pre-built binaries are extracted from the NGC container
+`nvcr.io/nvidia/tritonserver:26.02-trtllm-python-py3` (~16 GB), packaged into a tarball
+(2.7 GB compressed, 3.9 GB uncompressed), and hosted on GitHub Releases.
+
+The Nix expression (`triton-tensorrtllm-backend.nix`) uses `fetchurl` to download the bundle
+and `patchelf` to fix RPATHs — no cmake, no source compilation.
+
+**Bundle contents:**
+- `backends/tensorrtllm/libtriton_tensorrtllm.so` — Backend shared library (757 KB)
+- `backends/tensorrtllm/trtllmExecutorWorker` — TRT-LLM executor process (73 MB)
+- `lib/` — 40+ runtime shared libraries: `libtensorrt_llm.so`, `libnvinfer_plugin_tensorrt_llm.so`,
+  NCCL, OpenMPI, CUDA 13.x libs (`libcublas.so.13`, `libcudart.so.13`), `libudev`, `libcap`,
+  `libstdc++`
+
+**RPATH patching:**
+- Backend `.so` and executor worker: `$ORIGIN/../lib` (finds libs in sibling `lib/` dir)
+- Runtime libs: `$ORIGIN` (find each other in the same directory)
+
+**CUDA version coexistence:** The bundled CUDA 13.x libs have different SONAMEs from the
+system's CUDA 12.x libs (`libcublas.so.13` vs `libcublas.so.12`), so they load without
+conflict. The container's `libnvinfer.so.10.13.3` also doesn't conflict with the TRT
+backend's `10.14.1.48` (separate RPATHs).
+
+**Model conversion note:** Converting HuggingFace models to TRT-LLM engine format requires
+the `tensorrt_llm` Python package, which is only available inside the NGC container (not
+pip-installable on Python 3.13). Serving TRT-LLM engines is handled by this backend;
+conversion is a separate concern requiring a dedicated Python 3.12 environment.
+
 ## Nix Build Parallelism
 
 The build spawns parallel cmake sub-builds. If you run out of memory, adjust
@@ -242,17 +337,21 @@ cores = 2
 
 To build a different Triton version:
 
-1. Edit `.flox/pkgs/triton-server.nix`, `.flox/pkgs/triton-python-backend.nix`, and
-   `.flox/pkgs/triton-onnxruntime-backend.nix`
-2. Update `version` and `tag` at the top of all three files
+1. Edit `.flox/pkgs/triton-server.nix`, `.flox/pkgs/triton-python-backend.nix`,
+   `.flox/pkgs/triton-onnxruntime-backend.nix`, and `.flox/pkgs/triton-tensorrt-backend.nix`
+2. Update `version` and `tag` at the top of all four files
 3. Clear all `fetchFromGitHub` `hash` fields (set to `""`)
 4. Run `flox build` repeatedly - each failure prints the correct hash
 5. Fix any new build errors (new deps, changed cmake structure, etc.)
 
-All three expressions share the same `tag`/`version` and 3 of the same source repos
-(core, common, backend), so they should always be upgraded together. The ORT library
-version in `onnxruntime-cuda.nix` may also need updating to match what the new Triton
-release expects.
+All four source-built expressions share the same `tag`/`version` and 3 of the same source
+repos (core, common, backend), so they should always be upgraded together. The ORT library
+version in `onnxruntime-cuda.nix` and the TRT SDK version in `tensorrt-cuda.nix` may also
+need updating to match what the new Triton release expects.
+
+For the TRT-LLM backend (`triton-tensorrtllm-backend.nix`), extract a new bundle from the
+corresponding NGC container for the new Triton release, re-upload to GitHub Releases, and
+update the `fetchurl` hash.
 
 See `CLAUDE.md` for detailed notes on every sandbox challenge encountered.
 
@@ -276,9 +375,14 @@ triton-server:              /nix/store/383pyayhwglsv3ywgzlzaf3pd2i72xmq-triton-s
 triton-python-backend:      /nix/store/yhk1sv3ycny5k27nyfimsa4pb9xdin9y-triton-python-backend-2.66.0
 onnxruntime-cuda:           /nix/store/3hys619h5k6bdsp6c2jf2r378q63h354-onnxruntime-cuda-1.24.2
 triton-onnxruntime-backend: /nix/store/x7wsykzn8xrwn1vrf6a7h6k1193i5jcd-triton-onnxruntime-backend-2.66.0
+triton-tensorrt-backend:    /nix/store/alb9fcxjq0pckb2c6dq8k5994yb5gj88-triton-tensorrt-backend-2.66.0
+triton-tensorrtllm-backend: /nix/store/msjd49w3la9gzbp2spbrrh6xdjcsk4dz-triton-tensorrtllm-backend-2.66.0
 ```
 
-Consuming Flox environments reference these via `store-path` in their `manifest.toml`.
+Published packages (triton-server, triton-python-backend, triton-onnxruntime-backend,
+triton-tensorrt-backend, triton-tensorrtllm-backend) are available from the meetrlyio
+catalog via `pkg-path` references. The `store-path` references above are for debugging
+and direct testing only.
 
 ## License
 
