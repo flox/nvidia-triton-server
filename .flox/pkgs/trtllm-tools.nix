@@ -87,6 +87,14 @@ in pkgs.stdenv.mkDerivation {
     cp -a python/lib $out/python/
     cp -a python/dist-packages $out/python/
 
+    # Fix broken symlinks from container layout
+    # config dir libpython points to ../../x86_64-linux-gnu/ (doesn't exist)
+    rm -f $out/python/lib/python3.12/config-3.12-x86_64-linux-gnu/libpython3.12.so
+    ln -sf ../../../../lib/libpython3.12.so \
+      $out/python/lib/python3.12/config-3.12-x86_64-linux-gnu/libpython3.12.so
+    # sitecustomize.py points to /etc/python3.12/ (container path)
+    rm -f $out/python/lib/python3.12/sitecustomize.py
+
     # -- Native shared libraries --
     mkdir -p $out/lib
     cp -P lib/*.so lib/*.so.* $out/lib/ 2>/dev/null || true
