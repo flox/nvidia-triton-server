@@ -1,0 +1,7 @@
+{
+  "build_version": 16,
+  "force_increment": 0,
+  "git_rev": "45ed363feb041e836577d3563fcc84d59b14cdd4",
+  "git_rev_short": "45ed363",
+  "changelog": "Initial build. TensorRT-LLM backend v2.66.0 (r26.02), extracted from NGC container."
+}
