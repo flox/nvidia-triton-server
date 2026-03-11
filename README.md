@@ -31,11 +31,12 @@ Build output appears at `./result-triton-server/`, `./result-triton-python-backe
 ```
 result-triton-server/
   bin/
-    tritonserver          # Main server binary (18 MB)
-    triton-serve          # Server launcher script
-    triton-preflight      # Pre-flight validation script
-    triton-resolve-model  # Model provisioning script
-    _lib.sh               # Shared library sourced by the scripts
+    tritonserver              # Main server binary (18 MB)
+    triton-serve              # Server launcher script
+    triton-preflight          # Pre-flight validation script
+    triton-resolve-model      # Model provisioning script
+    triton-setup-backends     # Backend directory assembler (activation-time)
+    _lib.sh                   # Shared library sourced by the scripts
     simple                # Example: single model
     multi_server          # Example: multiple server instances
     memory_alloc          # Example: custom memory allocation
@@ -117,6 +118,12 @@ ln -s $(readlink -f ./result-triton-onnxruntime-backend/backends/onnxruntime) ./
   --backend-directory=./backends
 ```
 
+In the consuming runtime repo (triton-runtime), `triton-setup-backends` automates this
+symlink assembly at `flox activate` time. It builds a unified backend directory under
+`$FLOX_ENV_CACHE/backends/` by combining package-provided backends (Tier 1, from the Flox
+profile) with repo-local Python backends (Tier 2, with automatic stub injection from the
+python backend package).
+
 ## Building Custom Backends
 
 The build output includes everything needed to develop custom Triton backends:
@@ -172,13 +179,13 @@ cat /nix/store/...-triton-server-2.66.0/share/triton-server/flox-build-version-*
 Marker contents:
 
 ```
-build-version: 10
+build-version: 13
 upstream-version: 2.66.0
 upstream-tag: r26.02
-git-rev: c4a14de09992f5749ee99c68b7720dc3ee51d6a5
-git-rev-short: c4a14de
+git-rev: 82b501c69e77d9de40a7623ba8cdd2b603347f4c
+git-rev-short: 82b501c
 force-increment: 0
-changelog: Initial versioned build. Bundled runtime scripts.
+changelog: Fix triton-setup-backends: replace compgen with glob loop, remove stray local.
 ```
 
 See `CLAUDE.md` for the full pre-build workflow.
