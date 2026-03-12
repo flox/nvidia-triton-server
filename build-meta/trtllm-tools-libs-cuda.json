@@ -3,5 +3,5 @@
   "force_increment": 0,
   "git_rev": "29a0e7c99ec1c962012e100addcbad65b0ce97c4",
   "git_rev_short": "29a0e7c",
-  "changelog": "Add CPATH, TRITON_PTXAS_PATH, cuda tools on PATH for flashinfer/Triton JIT."
+  "changelog": "Add CUDA 13 headers, Python 3.12 dev headers, fix pyconfig.h multiarch redirect."
 }

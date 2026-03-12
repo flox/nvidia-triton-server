@@ -17,7 +17,7 @@
 
 let
   pname = "trtllm-tools";
-  version = "2.66.0";
+  version = "2.66.0-29a0e7c";
   tag = "r26.02";
 
   buildMeta = builtins.fromJSON (builtins.readFile ../../build-meta/trtllm-tools.json);
@@ -63,10 +63,11 @@ in pkgs.stdenv.mkDerivation {
       cp -P bin/cuda/* $out/bin/cuda/
     fi
 
-    # -- CUDA home structure (for deep_gemm CUDA_HOME) --
+    # -- CUDA home structure (for deep_gemm CUDA_HOME + flashinfer JIT) --
     # bin/cuda/ has the compiler tools; cuda/bin → ../bin/cuda avoids duplication
     mkdir -p $out/cuda
     ln -sf ../bin/cuda $out/cuda/bin
+    ln -sf ${libsCuda}/include $out/cuda/include
     ln -sf ${libsCuda}/lib/nvvm $out/cuda/nvvm
     ln -sf ${libsCuda}/lib $out/cuda/lib64
 
@@ -87,9 +88,11 @@ PKG_DIR="$(dirname "$SCRIPT_DIR")"
 export PYTHONHOME="@pythonPkg@/python"
 export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
 export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export PATH="$SCRIPT_DIR:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
 export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
 export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
 exec "@pythonPkg@/python/bin/python3.12" -c "
 from tensorrt_llm.commands.build import main
 import sys; sys.exit(main())
@@ -105,9 +108,11 @@ PKG_DIR="$(dirname "$SCRIPT_DIR")"
 export PYTHONHOME="@pythonPkg@/python"
 export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
 export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export PATH="$SCRIPT_DIR:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
 export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
 export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
 exec "@pythonPkg@/python/bin/python3.12" -c "
 from tensorrt_llm.commands.bench import main
 import sys; sys.exit(main())
@@ -123,9 +128,11 @@ PKG_DIR="$(dirname "$SCRIPT_DIR")"
 export PYTHONHOME="@pythonPkg@/python"
 export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
 export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export PATH="$SCRIPT_DIR:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
 export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
 export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
 exec "@pythonPkg@/python/bin/python3.12" -c "
 from tensorrt_llm.commands.eval import main
 import sys; sys.exit(main())
@@ -141,9 +148,11 @@ PKG_DIR="$(dirname "$SCRIPT_DIR")"
 export PYTHONHOME="@pythonPkg@/python"
 export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
 export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export PATH="$SCRIPT_DIR:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
 export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
 export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
 exec "@pythonPkg@/python/bin/python3.12" -c "
 from tensorrt_llm.commands.prune import main
 import sys; sys.exit(main())
@@ -159,9 +168,11 @@ PKG_DIR="$(dirname "$SCRIPT_DIR")"
 export PYTHONHOME="@pythonPkg@/python"
 export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
 export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export PATH="$SCRIPT_DIR:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
 export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
 export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
 exec "@pythonPkg@/python/bin/python3.12" -c "
 from tensorrt_llm.commands.refit import main
 import sys; sys.exit(main())
@@ -177,9 +188,11 @@ PKG_DIR="$(dirname "$SCRIPT_DIR")"
 export PYTHONHOME="@pythonPkg@/python"
 export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
 export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-export PATH="$SCRIPT_DIR:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
 export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
 export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
 exec "@pythonPkg@/python/bin/python3.12" -c "
 from tensorrt_llm.commands.serve import main
 import sys; sys.exit(main())
@@ -240,14 +253,14 @@ TRTLLM_WRAPPER_EOF
     # -- Version marker --
     mkdir -p $out/share/${pname}
     cat > $out/share/${pname}/flox-build-version-${toString buildVersion} <<'MARKER'
-    build-version: ${toString buildVersion}
-    upstream-version: ${version}
-    upstream-tag: ${tag}
-    git-rev: ${buildMeta.git_rev}
-    git-rev-short: ${buildMeta.git_rev_short}
-    force-increment: ${toString buildMeta.force_increment}
-    changelog: ${buildMeta.changelog}
-    MARKER
+build-version: ${toString buildVersion}
+upstream-version: ${version}
+upstream-tag: ${tag}
+git-rev: ${buildMeta.git_rev}
+git-rev-short: ${buildMeta.git_rev_short}
+force-increment: ${toString buildMeta.force_increment}
+changelog: ${buildMeta.changelog}
+MARKER
 
     runHook postInstall
   '';

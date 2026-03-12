@@ -25,6 +25,13 @@
     hash = "sha256-ApZuFrid/lQuUXI/s+45GlTfJN9ARDJKCQce+0tIFPg=";
   };
 
+  # CUDA 13.0 toolkit headers (extracted from NGC container layers 19+25)
+  # Needed for flashinfer JIT compilation (cuda_runtime.h, CCCL, cuBLAS, etc.)
+  cudaInclude = pkgs.fetchurl {
+    url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02-tools/trtllm-tools-cuda-include-26.02.tar.gz";
+    hash = "sha256-eHYwHrAyY2myo1tjELKQgZLoZHSs33xeg5KKMZP7GAU=";
+  };
+
   # Concatenation command for use in unpackPhase
   catParts = parts: "cat ${parts.bundlePart0} ${parts.bundlePart1} ${parts.bundlePart2} ${parts.bundlePart3} ${parts.bundlePart4}";
 }
