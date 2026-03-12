@@ -242,9 +242,11 @@ Newer GPUs (Blackwell sm_100+) work via PTX JIT compilation.
 
 ## Build Versioning
 
-Each of the 10 publishable packages embeds a version marker at
-`$out/share/<pname>/flox-build-version-<N>` containing the build number, git revision,
-and a changelog. This provides provenance tracking for every store path.
+6 packages embed a version marker at `$out/share/<pname>/flox-build-version-<N>`
+containing the build number, git revision, and a changelog: triton-server,
+triton-python-backend, triton-onnxruntime-backend, triton-tensorrt-backend,
+triton-tensorrtllm-backend, and trtllm-tools (wrapper only). The 4 trtllm-tools
+sub-packages and the 2 build deps (onnxruntime-cuda, tensorrt-cuda) do not get markers.
 
 Version metadata is stored in `build-meta/<package>.json` and read by the Nix
 expressions at eval time. Before each `flox build` or `flox publish`, update the JSON

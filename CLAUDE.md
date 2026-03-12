@@ -3,10 +3,13 @@
 ## Project Overview
 
 This is a Flox Nix expression build of NVIDIA Triton Inference Server v2.66.0 (r26.02)
-from source. The build output is at `./result-triton-server/`.
+from source, plus TRT-LLM model conversion tools via NGC container extraction.
+
+All packages are published to the `flox` Flox catalog (10 total: 5 server/backends + 5 trtllm-tools).
 
 ## Key Files
 
+### Server and backends
 - `.flox/pkgs/triton-server.nix` - Triton server Nix expression
 - `.flox/pkgs/triton-python-backend.nix` - Python backend expression (callPackage)
 - `.flox/pkgs/onnxruntime-cuda.nix` - ONNX Runtime C++ library (standalone nixpkgs-pin)
@@ -14,8 +17,19 @@ from source. The build output is at `./result-triton-server/`.
 - `.flox/pkgs/tensorrt-cuda.nix` - TensorRT SDK (standalone nixpkgs-pin, build dep only)
 - `.flox/pkgs/triton-tensorrt-backend.nix` - TensorRT backend expression (callPackage)
 - `.flox/pkgs/triton-tensorrtllm-backend.nix` - TensorRT-LLM backend (NGC bundle extraction)
+
+### TRT-LLM model conversion tools (5 sub-packages)
+- `.flox/pkgs/trtllm-tools-parts.nix` - Shared `fetchurl` defs (all 5 pkgs reference same tarballs)
+- `.flox/pkgs/trtllm-tools-libs-cuda.nix` - CUDA 13, cuDNN, NCCL, MPI native libs (2.9 GB)
+- `.flox/pkgs/trtllm-tools-libs-ml.nix` - TensorRT 10.13, MKL, TBB native libs (3.5 GB)
+- `.flox/pkgs/trtllm-tools-python.nix` - Python 3.12 + stdlib + ~290 dist-packages (4.4 GB)
+- `.flox/pkgs/trtllm-tools-engine.nix` - PyTorch 2.9.0a0 + tensorrt_llm 1.1.0 (4.2 GB)
+- `.flox/pkgs/trtllm-tools.nix` - Wrapper scripts + trtexec + cuda/ + hpcx/ (244 MB)
+
+### Other
 - `.flox/env/manifest.toml` - Flox manifest (minimal, just for `flox build`)
-- `result-triton-server/` - Build output symlink
+- `build-meta/<package>.json` - Build version metadata (6 packages with markers)
+- `result-triton-server/`, `result-trtllm-tools/`, etc. - Build output symlinks
 
 ## Build Commands
 
@@ -37,14 +51,27 @@ flox build triton-tensorrt-backend                # ~2 min
 
 git add .flox/pkgs/triton-tensorrtllm-backend.nix
 flox build triton-tensorrtllm-backend             # fast, pre-built bundle
+
+git add .flox/pkgs/trtllm-tools-parts.nix .flox/pkgs/trtllm-tools-libs-cuda.nix \
+       .flox/pkgs/trtllm-tools-libs-ml.nix .flox/pkgs/trtllm-tools-python.nix \
+       .flox/pkgs/trtllm-tools-engine.nix .flox/pkgs/trtllm-tools.nix
+flox build trtllm-tools-libs-cuda                 # fast, pre-built bundle
+flox build trtllm-tools-libs-ml                   # fast, pre-built bundle
+flox build trtllm-tools-python                    # fast, pre-built bundle
+flox build trtllm-tools-engine                    # fast, pre-built bundle
+flox build trtllm-tools                           # fast, wrapper scripts only
 ```
 
 ## Build Versioning (MANDATORY before every build/publish)
 
-Each publishable package writes a marker file at
-`$out/share/<pname>/flox-build-version-<N>`. The version info is read from
+6 packages write a version marker file at `$out/share/<pname>/flox-build-version-<N>`:
+triton-server, triton-python-backend, triton-onnxruntime-backend, triton-tensorrt-backend,
+triton-tensorrtllm-backend, and trtllm-tools (wrapper only). The version info is read from
 `build-meta/<package>.json` at Nix eval time — **NOT** from git (builtins.fetchGit
 fails during `flox publish` because the source is copied to a store path with no .git).
+
+The 4 trtllm-tools sub-packages (libs-cuda, libs-ml, python, engine) and the 2 build deps
+(onnxruntime-cuda, tensorrt-cuda) do NOT get version markers.
 
 ### Pre-build checklist
 
@@ -168,7 +195,7 @@ Same pattern as the ORT backend (slow dep cached separately), except the TRT SDK
 1. **`tensorrt-cuda.nix`** — Uses standalone nixpkgs-pin pattern (same as
    `onnxruntime-cuda.nix`). Provides the TRT SDK via `cudaPackages.tensorrt`, which is
    a multi-output derivation — must use `trt.include` and `trt.lib`, not bare `trt`.
-   This is a build dependency only (not published to the catalog).
+   This is a build dependency only (not published to the `flox` catalog).
 
 2. **`triton-tensorrt-backend.nix`** — Uses callPackage convention (same as other backends).
    Same sandbox adaptations: `/etc/os-release` stub, tests disabled, `CUDA_ARCH_LIST` +
@@ -197,6 +224,43 @@ Key differences from source-built backends:
 
 Container extraction was done with `skopeo` (OCI format pull to `/mnt/scratch/trtllm-container`).
 The bundle tarball lives at `/mnt/scratch/trtllm-backend-bundle-26.02.tar.gz`.
+
+### TRT-LLM Model Conversion Tools: 5-Way Split
+
+Standalone Python 3.12 environment for HuggingFace → TRT-LLM engine conversion, extracted
+from the same NGC container as the TRT-LLM backend. Consumed by a separate Flox environment
+(`triton-trtllm-tools`), not the triton-runtime environment. Python 3.12 is required because
+`tensorrt_llm` is not pip-installable on Python 3.13.
+
+The source bundle (~8.2 GB compressed) is split into 5 tarball parts on GitHub Release
+`v26.02-tools` (GitHub has a 2 GB per-file limit). All 5 Nix sub-packages reference the
+same `fetchurl` definitions in `trtllm-tools-parts.nix`.
+
+Each sub-package stays under the 5 GB Flox catalog NAR upload limit:
+
+| Sub-package | Size | What it contains |
+|-------------|------|------------------|
+| `trtllm-tools-libs-cuda` | 2.9 GB | CUDA 13, cuDNN 9.14, NCCL, OpenMPI, misc native `.so` |
+| `trtllm-tools-libs-ml` | 3.5 GB | TensorRT 10.13, MKL, TBB |
+| `trtllm-tools-python` | 4.4 GB | Python 3.12 + stdlib + ~290 dist-packages (excl torch/tensorrt_llm) |
+| `trtllm-tools-engine` | 4.2 GB | PyTorch 2.9.0a0 + tensorrt_llm 1.1.0 + torchvision |
+| `trtllm-tools` | 244 MB | Wrapper scripts + trtexec + `cuda/` + `hpcx/ompi/` |
+
+Key Nix gotchas specific to trtllm-tools:
+
+- **`@placeholder@` substitution**: Wrapper scripts use `@libs_cuda@`, `@libs_ml@`,
+  `@python@`, `@engine@` tokens replaced by `substituteInPlace` with Nix store paths.
+  This avoids Nix `''${` escaping hell in heredoc-heavy shell wrappers.
+- **DT_RPATH → DT_RUNPATH**: Some NGC container `.so` files use `DT_RPATH` (takes
+  precedence over `LD_LIBRARY_PATH`). Must patch to `DT_RUNPATH` so the wrapper's
+  `LD_LIBRARY_PATH` works. Use `patchelf --set-rpath` on affected `.so` files.
+- **nullglob in wrappers**: Wrapper scripts need `shopt -s nullglob` — Nix bash doesn't
+  set it by default, causing glob patterns that match nothing to be passed literally.
+- **OCI whiteout markers**: When extracting from the NGC container, layers use
+  `.wh..wh..opq` whiteout markers to replace directories. Must extract from the LATEST
+  layer containing the whiteout, not the earliest.
+- **`_distutils_hack`**: Lives in system Python (`usr/lib/python3/dist-packages/`),
+  not local `dist-packages/` — easy to miss during extraction.
 
 ## Critical Nix Sandbox Challenges (and solutions)
 
@@ -300,11 +364,19 @@ The CUDA 13.x SONAMEs don't conflict with system CUDA 12.x.
 
 ## Upgrading to a New Triton Version
 
+For source-built packages (server + 4 backends):
 1. Update `tag` and `version` in the nix expression
 2. Set all `fetchFromGitHub` hashes to `""` (empty string)
 3. Run `flox build triton-server` repeatedly - each failure gives the correct hash
 4. Check for new `/etc/os-release` references, new test directories, new deps
 5. The Python patch script and path mappings may need updates if third_party changes
+
+For NGC-extracted packages (tensorrtllm-backend + trtllm-tools):
+1. Pull the new NGC container with `skopeo`
+2. Extract the backend bundle and tools bundle from the container layers
+3. Split large tarballs for GitHub Releases (`split -b 2000000000`)
+4. Upload to new release tags and update `fetchurl` hashes
+5. For trtllm-tools, only `trtllm-tools-parts.nix` hashes need updating (shared by all 5 pkgs)
 
 ## Known Caveats
 
