@@ -335,22 +335,17 @@ if not os.path.isdir(root):
     raise SystemExit(f"Not a directory: {root}")
 
 entries = []
-for cur, dirs, files in os.walk(root, topdown=True, followlinks=False):
+for cur, dirs, files in os.walk(root, topdown=True, followlinks=True):
     dirs[:] = sorted(d for d in dirs)
     files = sorted(files)
     rel_dir = os.path.relpath(cur, root)
     if rel_dir == ".":
         rel_dir = ""
     for d in dirs:
-        full = os.path.join(cur, d)
-        if os.path.islink(full):
-            raise SystemExit(f"Symlink not allowed in model repo: {full}")
         rel = f"{rel_dir}/{d}" if rel_dir else d
         entries.append({"type": "dir", "path": rel})
     for f in files:
         full = os.path.join(cur, f)
-        if os.path.islink(full):
-            raise SystemExit(f"Symlink not allowed in model repo: {full}")
         rel = f"{rel_dir}/{f}" if rel_dir else f
         h = hashlib.sha256()
         with open(full, "rb") as fh:
