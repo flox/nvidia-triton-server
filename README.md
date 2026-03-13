@@ -1,6 +1,6 @@
 # Triton Inference Server - Nix Build
 
-Build NVIDIA Triton Inference Server v2.66.0 and its backends (Python, ONNX Runtime, TensorRT) from source using Flox/Nix, plus TensorRT-LLM backend and TRT-LLM model conversion tools via NGC container extraction.
+Build NVIDIA Triton Inference Server v2.66.0 and its backends (Python, ONNX Runtime, TensorRT, TensorRT-LLM) from source using Flox/Nix, plus TRT-LLM model conversion tools via NGC container extraction.
 
 ## Prerequisites
 
@@ -54,6 +54,7 @@ result-triton-server/
     triton-preflight          # Pre-flight validation script
     triton-resolve-model      # Model provisioning script
     triton-setup-backends     # Backend directory assembler (activation-time)
+    triton-setup-models       # Model directory assembler (activation-time)
     _lib.sh                   # Shared library sourced by the scripts
     simple                # Example: single model
     multi_server          # Example: multiple server instances
@@ -125,6 +126,10 @@ result-triton-tensorrtllm-backend/
     libtensorrt_llm.so                 # TRT-LLM runtime + 40+ bundled libs (3.9 GB total)
     libnvinfer_plugin_tensorrt_llm.so
     libnccl.so.2, libmpi.so.40, libcudart.so.13, libcublas.so.13, ...
+  hpcx/ompi/                           # OpenMPI prefix (OPAL_PREFIX for MPI_Init_thread)
+    share/openmpi/                     # MPI help files and runtime data
+    lib/                               # MCA modules (mca_*.so)
+    etc/                               # OpenMPI configuration
 ```
 
 The trtllm-tools output is split across 5 sub-packages (see
@@ -204,7 +209,9 @@ In the consuming runtime repo (triton-runtime), `triton-setup-backends` automate
 symlink assembly at `flox activate` time. It builds a unified backend directory under
 `$FLOX_ENV_CACHE/backends/` by combining package-provided backends (Tier 1, from the Flox
 profile) with repo-local Python backends (Tier 2, with automatic stub injection from the
-python backend package).
+python backend package). Similarly, `triton-setup-models` assembles a model directory
+under `$FLOX_ENV_CACHE/models/` from Nix-store model packages (Tier 1) and repo-local
+models (Tier 2), expanding `config.pbtxt.template` token placeholders at activation time.
 
 ## Building Custom Backends
 
@@ -247,6 +254,11 @@ containing the build number, git revision, and a changelog: triton-server,
 triton-python-backend, triton-onnxruntime-backend, triton-tensorrt-backend,
 triton-tensorrtllm-backend, and trtllm-tools (wrapper only). The 4 trtllm-tools
 sub-packages and the 2 build deps (onnxruntime-cuda, tensorrt-cuda) do not get markers.
+
+Two packages (triton-server and triton-tensorrtllm-backend) append the git rev short hash
+to their Nix `version` attribute (e.g., `2.66.0+c279dda`) so that successive builds
+produce distinct store paths in the Flox catalog. The remaining packages use plain
+`2.66.0`.
 
 Version metadata is stored in `build-meta/<package>.json` and read by the Nix
 expressions at eval time. Before each `flox build` or `flox publish`, update the JSON
@@ -345,6 +357,9 @@ and `patchelf` to fix RPATHs — no cmake, no source compilation.
 - `lib/` — 40+ runtime shared libraries: `libtensorrt_llm.so`, `libnvinfer_plugin_tensorrt_llm.so`,
   NCCL, OpenMPI, CUDA 13.x libs (`libcublas.so.13`, `libcudart.so.13`), `libudev`, `libcap`,
   `libstdc++`
+- `hpcx/ompi/` — OpenMPI prefix (share/openmpi/ help files, lib/ MCA modules, etc/ config).
+  Required at runtime for `MPI_Init_thread` — the on-activate hook sets `OPAL_PREFIX` and
+  prepends `hpcx/ompi/lib` to `LD_LIBRARY_PATH`.
 
 **RPATH patching:**
 - Backend `.so` and executor worker: `$ORIGIN/../lib` (finds libs in sibling `lib/` dir)
@@ -468,12 +483,12 @@ would need to be added here following the same patterns as the other backends.
 Current build outputs (for use in `store-path` references from consuming environments):
 
 ```
-triton-server:              /nix/store/383pyayhwglsv3ywgzlzaf3pd2i72xmq-triton-server-2.66.0
+triton-server:              /nix/store/p7yl6mn4njkr1ax5b18f1wxckhjsd71x-triton-server-2.66.0+c279dda
 triton-python-backend:      /nix/store/yhk1sv3ycny5k27nyfimsa4pb9xdin9y-triton-python-backend-2.66.0
 onnxruntime-cuda:           /nix/store/3hys619h5k6bdsp6c2jf2r378q63h354-onnxruntime-cuda-1.24.2
 triton-onnxruntime-backend: /nix/store/x7wsykzn8xrwn1vrf6a7h6k1193i5jcd-triton-onnxruntime-backend-2.66.0
 triton-tensorrt-backend:    /nix/store/alb9fcxjq0pckb2c6dq8k5994yb5gj88-triton-tensorrt-backend-2.66.0
-triton-tensorrtllm-backend: /nix/store/bgfpnsx7fpmhc3vm55n9aiqzyajl5riy-triton-tensorrtllm-backend-2.66.0
+triton-tensorrtllm-backend: /nix/store/5w8yffb35ir2qp8vx1i73c4qjxbbg0wg-triton-tensorrtllm-backend-2.66.0+c279dda
 trtllm-tools-libs-cuda:     /nix/store/bi9nmrmqpapwgz97m13q3hz39lgg77hj-trtllm-tools-libs-cuda-2.66.0
 trtllm-tools-libs-ml:       /nix/store/jz4hiz38vnly47dw2fkfmaw4ygpsiw74-trtllm-tools-libs-ml-2.66.0
 trtllm-tools-python:        /nix/store/02h0m6qc5yqk3bdpghy5jhfl29z5rjfm-trtllm-tools-python-2.66.0

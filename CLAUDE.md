@@ -26,6 +26,9 @@ All packages are published to the `flox` Flox catalog (10 total: 5 server/backen
 - `.flox/pkgs/trtllm-tools-engine.nix` - PyTorch 2.9.0a0 + tensorrt_llm 1.1.0 (4.2 GB)
 - `.flox/pkgs/trtllm-tools.nix` - Wrapper scripts + trtexec + cuda/ + hpcx/ (244 MB)
 
+### Scripts
+- `scripts/triton-setup-models` - Model directory assembler (activation-time, Tier 1/Tier 2 model discovery)
+
 ### Other
 - `.flox/env/manifest.toml` - Flox manifest (minimal, just for `flox build`)
 - `build-meta/<package>.json` - Build version metadata (6 packages with markers)
@@ -108,6 +111,10 @@ Example — updating triton-server before a build:
 - **force_increment**: Manually bump this to increase the version without a code change
 - **git_rev** / **git_rev_short**: The commit that produced this build
 - **changelog**: Human-readable; what changed vs the previous build
+
+Two packages use `version = "2.66.0+${buildMeta.git_rev_short}"` in their Nix expressions
+(triton-server and triton-tensorrtllm-backend) so successive builds produce distinct catalog
+entries. The remaining packages use plain `version = "2.66.0"`.
 
 ### Force increment
 
