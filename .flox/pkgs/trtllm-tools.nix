@@ -17,7 +17,7 @@
 
 let
   pname = "trtllm-tools";
-  version = "2.66.0-29a0e7c";
+  version = "2.66.0-e04696f";
   tag = "r26.02";
 
   buildMeta = builtins.fromJSON (builtins.readFile ../../build-meta/trtllm-tools.json);

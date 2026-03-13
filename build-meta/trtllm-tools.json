@@ -1,7 +1,7 @@
 {
-  "build_version": 26,
-  "force_increment": 0,
-  "git_rev": "29a0e7c99ec1c962012e100addcbad65b0ce97c4",
-  "git_rev_short": "29a0e7c",
-  "changelog": "Add CPATH, TRITON_PTXAS_PATH, cuda tools on PATH for flashinfer/Triton JIT."
+  "build_version": 28,
+  "force_increment": 1,
+  "git_rev": "e04696fb8f79cb4f59aeac71ebb95c775bfe43c3",
+  "git_rev_short": "e04696f",
+  "changelog": "Add python3 wrapper exposing bundled Python 3.12 with tensorrt_llm and torch."
 }
