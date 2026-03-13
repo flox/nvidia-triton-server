@@ -200,6 +200,25 @@ import sys; sys.exit(main())
 TRTLLM_WRAPPER_EOF
     chmod +x $out/bin/trtllm-serve
 
+    # -- python3 wrapper (exposes bundled Python 3.12 with tensorrt_llm + torch) --
+    cat > $out/bin/python3 << 'TRTLLM_WRAPPER_EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+PKG_DIR="$(dirname "$SCRIPT_DIR")"
+export PYTHONHOME="@pythonPkg@/python"
+export PYTHONPATH="@pythonPkg@/python/dist-packages:@enginePkg@/dist-packages"
+export LD_LIBRARY_PATH="@libsCuda@/lib:@libsMl@/lib:@enginePkg@/dist-packages/torch/lib:@enginePkg@/dist-packages/tensorrt_llm/libs''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PATH="$SCRIPT_DIR:$SCRIPT_DIR/cuda:@pythonPkg@/python/bin''${PATH:+:$PATH}"
+export OPAL_PREFIX="$PKG_DIR/hpcx/ompi"
+export CUDA_HOME="$PKG_DIR/cuda"
+export CPATH="@libsCuda@/include/python3.12:@libsCuda@/include''${CPATH:+:$CPATH}"
+export TRITON_PTXAS_PATH="$SCRIPT_DIR/cuda/ptxas"
+exec "@pythonPkg@/python/bin/python3.12" "$@"
+TRTLLM_WRAPPER_EOF
+    chmod +x $out/bin/python3
+    ln -sf python3 $out/bin/python3.12
+
     # -- trtexec wrapper --
     cat > $out/bin/trtexec << 'TRTLLM_WRAPPER_EOF'
 #!/usr/bin/env bash
@@ -219,7 +238,8 @@ TRTLLM_WRAPPER_EOF
     # The heredoc wrappers use @token@ placeholders that Nix can't interpolate
     # inside single-quoted heredocs.  substituteInPlace resolves them.
     for f in $out/bin/trtllm-build $out/bin/trtllm-bench $out/bin/trtllm-eval \
-             $out/bin/trtllm-prune $out/bin/trtllm-refit $out/bin/trtllm-serve; do
+             $out/bin/trtllm-prune $out/bin/trtllm-refit $out/bin/trtllm-serve \
+             $out/bin/python3; do
       substituteInPlace "$f" \
         --replace-fail '@pythonPkg@' '${pythonPkg}' \
         --replace-fail '@enginePkg@' '${enginePkg}' \
