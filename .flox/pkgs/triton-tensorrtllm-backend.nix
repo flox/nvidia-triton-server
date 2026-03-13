@@ -26,11 +26,11 @@ let
   # Parts are concatenated during unpackPhase to reconstruct the original tarball.
   bundlePart0 = pkgs.fetchurl {
     url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part0";
-    hash = "sha256-x8ee8bFUcPxtc5qI8rCUV86ioFboiTYZzQWoNMwpW+s=";
+    hash = "sha256-GuC1qCh9I5Z221PLajRWWQIlQYNXTwMV+ayJCysaPZQ=";
   };
   bundlePart1 = pkgs.fetchurl {
     url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part1";
-    hash = "sha256-V5WLkMe0et4QE2wppXJD8G7ksiBoUU40Ncvm+yzjVYc=";
+    hash = "sha256-3oEXvGqp79UjsI9lKDLaks7i/LcKMmBgEomXgXKxSw0=";
   };
 
 in pkgs.stdenv.mkDerivation {
