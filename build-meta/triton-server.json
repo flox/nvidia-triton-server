@@ -1,7 +1,7 @@
 {
   "build_version": 36,
   "force_increment": 0,
-  "git_rev": "7d618dca58bb0e235caa18ea95a5ff3f41916439",
-  "git_rev_short": "7d618dc",
+  "git_rev": "1df2feb669ff88764ef99faec8f771d5e3083aa5",
+  "git_rev_short": "1df2feb",
   "changelog": "Package OpenAI-compatible frontend (main.py + openai_frontend/ + requirements.txt) in triton-server output."
 }
