@@ -1,7 +1,7 @@
 {
-  "build_version": 36,
+  "build_version": 38,
   "force_increment": 0,
-  "git_rev": "1df2feb669ff88764ef99faec8f771d5e3083aa5",
-  "git_rev_short": "1df2feb",
-  "changelog": "Package OpenAI-compatible frontend (main.py + openai_frontend/ + requirements.txt) in triton-server output."
+  "git_rev": "3950d01956550110babf3199f53470a1bc3a5599",
+  "git_rev_short": "3950d01",
+  "changelog": "Package OpenAI frontend; fix symlink rejection in manifest SHA for Nix-assembled models."
 }
