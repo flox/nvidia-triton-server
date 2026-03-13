@@ -1,7 +1,7 @@
 {
-  "build_version": 31,
+  "build_version": 33,
   "force_increment": 0,
-  "git_rev": "e8a6a34abff09015507792ffe7ac20b770dab7c3",
-  "git_rev_short": "e8a6a34",
+  "git_rev": "c279dda8038d78ab5d24092ed9da0a915f5226aa",
+  "git_rev_short": "c279dda",
   "changelog": "Fix model-repo pollution: move .published/.staging/state out of TRITON_MODEL_REPOSITORY."
 }

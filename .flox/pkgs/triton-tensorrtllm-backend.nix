@@ -20,7 +20,7 @@ let
 
   buildMeta = builtins.fromJSON (builtins.readFile ../../build-meta/triton-tensorrtllm-backend.json);
   buildVersion = buildMeta.build_version;
-  version = "2.66.0-${buildMeta.git_rev_short}";
+  version = "2.66.0+${buildMeta.git_rev_short}";
 
   # Bundle is split into two parts to stay under GitHub Releases' 2 GB file size limit.
   # Parts are concatenated during unpackPhase to reconstruct the original tarball.
