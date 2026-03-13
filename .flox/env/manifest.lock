@@ -2,9 +2,131 @@
   "lockfile-version": 1,
   "manifest": {
     "version": 1,
+    "install": {
+      "gh": {
+        "pkg-path": "gh"
+      }
+    },
     "hook": {},
     "profile": {},
     "options": {}
   },
-  "packages": []
+  "packages": [
+    {
+      "attr_path": "gh",
+      "broken": false,
+      "derivation": "/nix/store/7dazy9x7vy5c9wrmkyzpicif3f22c6my-gh-2.87.3.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "gh",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "name": "gh-2.87.3",
+      "pname": "gh",
+      "rev": "62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "rev_count": 961274,
+      "rev_date": "2026-03-10T06:05:22Z",
+      "scrape_date": "2026-03-13T04:41:53.142056Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.87.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/gkpngbiz6fys2nsxgxcd454j4ph78wxb-gh-2.87.3"
+      },
+      "system": "aarch64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gh",
+      "broken": false,
+      "derivation": "/nix/store/8i1cn0z56sxnzcf9im1y5ihlkwalixd7-gh-2.87.3.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "gh",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "name": "gh-2.87.3",
+      "pname": "gh",
+      "rev": "62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "rev_count": 961274,
+      "rev_date": "2026-03-10T06:05:22Z",
+      "scrape_date": "2026-03-13T05:13:51.523963Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.87.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/arwzxdy2ba1p4ak0b55ln1a5xvxdws4c-gh-2.87.3"
+      },
+      "system": "aarch64-linux",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gh",
+      "broken": false,
+      "derivation": "/nix/store/4finf01zh41sm5msm9mh80pf2qq01gda-gh-2.87.3.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "gh",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "name": "gh-2.87.3",
+      "pname": "gh",
+      "rev": "62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "rev_count": 961274,
+      "rev_date": "2026-03-10T06:05:22Z",
+      "scrape_date": "2026-03-13T05:44:27.752524Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.87.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/b7cbk3r89jy5xgcvyd5nf087bbyljl9v-gh-2.87.3"
+      },
+      "system": "x86_64-darwin",
+      "group": "toplevel",
+      "priority": 5
+    },
+    {
+      "attr_path": "gh",
+      "broken": false,
+      "derivation": "/nix/store/lkvi9s7l2jccvb0pan6vn64wd5qladyj-gh-2.87.3.drv",
+      "description": "GitHub CLI tool",
+      "install_id": "gh",
+      "license": "MIT",
+      "locked_url": "https://github.com/flox/nixpkgs?rev=62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "name": "gh-2.87.3",
+      "pname": "gh",
+      "rev": "62dc67aa6a52b4364dd75994ec00b51fbf474e50",
+      "rev_count": 961274,
+      "rev_date": "2026-03-10T06:05:22Z",
+      "scrape_date": "2026-03-13T06:20:17.238535Z",
+      "stabilities": [
+        "unstable"
+      ],
+      "unfree": false,
+      "version": "2.87.3",
+      "outputs_to_install": [
+        "out"
+      ],
+      "outputs": {
+        "out": "/nix/store/x0nqj95k7dbxw4d1vvsckqgl6lhmxhf1-gh-2.87.3"
+      },
+      "system": "x86_64-linux",
+      "group": "toplevel",
+      "priority": 5
+    }
+  ]
 }
