@@ -1,7 +1,7 @@
 {
-  "build_version": 46,
+  "build_version": 48,
   "force_increment": 0,
-  "git_rev": "d68509754a682727cf939b2fe1068611c20da93e",
-  "git_rev_short": "d685097",
-  "changelog": "Add --load-model to OpenAI frontend; auto-promote to explicit mode when TRITON_MODEL is set."
+  "git_rev": "c607add5d3c14cb5c6de0309acaf916469b80261",
+  "git_rev_short": "c607add",
+  "changelog": "Fix server.load() API call; add --load-model + auto-explicit mode for OpenAI frontend."
 }
