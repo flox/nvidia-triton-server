@@ -1,7 +1,7 @@
 {
-  "build_version": 54,
+  "build_version": 57,
   "force_increment": 0,
-  "git_rev": "bea06f42926975301fea0814af58a5410d7258a9",
-  "git_rev_short": "bea06f4",
-  "changelog": "Auto-load sub-models for BLS ensembles in explicit mode."
+  "git_rev": "b0b0556f93ad89c4e764f881856073dfb308fc8c",
+  "git_rev_short": "b0b0556",
+  "changelog": "Fix: create version dir for synthesized TRT-LLM raw models."
 }
