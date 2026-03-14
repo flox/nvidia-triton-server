@@ -748,6 +748,11 @@ if lib::is_truthy "$TRITON_OPENAI_FRONTEND"; then
 
   if [[ "$TRITON_MODEL_CONTROL_MODE" == "explicit" ]] && [[ -n "${TRITON_MODEL:-}" ]]; then
     _model_name="$(basename "$_TRITON_RESOLVED_PATH")"
+    # Prefer ensemble variant for OpenAI frontend (handles text_input→tokenization)
+    _ensemble_name="${_model_name}_ensemble"
+    if [[ -d "$TRITON_MODEL_REPOSITORY/$_ensemble_name" ]]; then
+      _model_name="$_ensemble_name"
+    fi
     cmd+=(--load-model="$_model_name")
   fi
 
