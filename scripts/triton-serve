@@ -739,7 +739,17 @@ if lib::is_truthy "$TRITON_OPENAI_FRONTEND"; then
     cmd+=(--backend-directory="$TRITON_BACKEND_DIR")
   fi
 
+  # Auto-promote to explicit mode when a specific model is selected so the
+  # Python API doesn't try (and fail) to load every model in the repository.
+  if [[ -n "${TRITON_MODEL:-}" ]] && [[ "$TRITON_MODEL_CONTROL_MODE" == "none" ]]; then
+    TRITON_MODEL_CONTROL_MODE="explicit"
+  fi
   cmd+=(--model-control-mode="$TRITON_MODEL_CONTROL_MODE")
+
+  if [[ "$TRITON_MODEL_CONTROL_MODE" == "explicit" ]] && [[ -n "${TRITON_MODEL:-}" ]]; then
+    _model_name="$(basename "$_TRITON_RESOLVED_PATH")"
+    cmd+=(--load-model="$_model_name")
+  fi
 
   if [[ -n "$TRITON_OPENAI_TOKENIZER" ]]; then
     cmd+=(--tokenizer="$TRITON_OPENAI_TOKENIZER")

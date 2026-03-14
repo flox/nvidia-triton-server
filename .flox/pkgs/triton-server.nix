@@ -387,7 +387,7 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
     cp ${serverSrc}/python/openai/openai_frontend/main.py $out/python/openai/
     cp ${serverSrc}/python/openai/requirements.txt $out/python/openai/
 
-    # Patch main.py: add --backend-directory and --model-control-mode args
+    # Patch main.py: add --backend-directory, --model-control-mode, --load-model args
     chmod +w $out/python/openai/main.py
     substituteInPlace $out/python/openai/main.py \
       --replace-fail \
@@ -405,12 +405,25 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
         help="Triton model control mode (default: none)",
     )
     triton_group.add_argument(
+        "--load-model",
+        type=str,
+        action="append",
+        default=None,
+        help="Model(s) to load in explicit mode (repeatable)",
+    )
+    triton_group.add_argument(
         "--default-max-tokens",' \
       --replace-fail \
         'model_repository=args.model_repository,' \
         'model_repository=args.model_repository,
         **({"backend_directory": args.backend_directory} if args.backend_directory else {}),
-        **({"model_control_mode": getattr(tritonserver.ModelControlMode, args.model_control_mode.upper())} if args.model_control_mode else {}),'
+        **({"model_control_mode": getattr(tritonserver.ModelControlMode, args.model_control_mode.upper())} if args.model_control_mode else {}),' \
+      --replace-fail \
+        ').start(wait_until_ready=True)' \
+        ').start(wait_until_ready=True)
+    if args.load_model:
+        for _model_name in args.load_model:
+            server.load_model(_model_name)'
 
     mkdir -p $out/share/${pname}
     cat > $out/share/${pname}/flox-build-version-${toString buildVersion} <<'MARKER'
