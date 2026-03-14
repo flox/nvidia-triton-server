@@ -425,6 +425,18 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
         for _model_name in args.load_model:
             server.load(_model_name)'
 
+    # Patch triton_engine.py: skip unloaded models in explicit mode
+    chmod +w $out/python/openai/openai_frontend/engine/triton_engine.py
+    substituteInPlace $out/python/openai/openai_frontend/engine/triton_engine.py \
+      --replace-fail \
+        '            model = self.server.model(name)
+            backend = model.config()["backend"]' \
+        '            model = self.server.model(name)
+            try:
+                backend = model.config()["backend"]
+            except Exception:
+                continue'
+
     mkdir -p $out/share/${pname}
     cat > $out/share/${pname}/flox-build-version-${toString buildVersion} <<'MARKER'
 build-version: ${toString buildVersion}
