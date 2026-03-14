@@ -1,0 +1,32 @@
+name: "@MODEL_NAME@_ensemble"
+backend: "python"
+max_batch_size: 8
+
+model_transaction_policy {
+  decoupled: true
+}
+
+input [
+  { name: "text_input",   data_type: TYPE_STRING, dims: [ 1 ] },
+  { name: "max_tokens",   data_type: TYPE_INT32,  dims: [ 1 ], optional: true },
+  { name: "stream",       data_type: TYPE_BOOL,   dims: [ 1 ], optional: true },
+  { name: "temperature",  data_type: TYPE_FP32,   dims: [ 1 ], optional: true },
+  { name: "top_p",        data_type: TYPE_FP32,   dims: [ 1 ], optional: true },
+  { name: "seed",         data_type: TYPE_UINT64,  dims: [ 1 ], optional: true },
+  { name: "repetition_penalty", data_type: TYPE_FP32, dims: [ 1 ], optional: true },
+  { name: "stop_words",   data_type: TYPE_STRING, dims: [ -1 ], optional: true },
+  { name: "frequency_penalty", data_type: TYPE_FP32, dims: [ 1 ], optional: true },
+  { name: "presence_penalty",  data_type: TYPE_FP32, dims: [ 1 ], optional: true },
+  { name: "return_num_input_tokens",  data_type: TYPE_BOOL, dims: [ 1 ], optional: true },
+  { name: "return_num_output_tokens", data_type: TYPE_BOOL, dims: [ 1 ], optional: true }
+]
+
+output [
+  { name: "text_output", data_type: TYPE_STRING, dims: [ -1 ] }
+]
+
+instance_group [{ count: 1, kind: KIND_CPU }]
+
+parameters: { key: "preprocessing_model", value: { string_value: "@MODEL_NAME@_preprocessing" } }
+parameters: { key: "trtllm_model",        value: { string_value: "@MODEL_NAME@" } }
+parameters: { key: "tokenizer_dir",       value: { string_value: "@TOKENIZER_DIR@" } }

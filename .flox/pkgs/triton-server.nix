@@ -437,6 +437,12 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
             except Exception:
                 continue'
 
+    # TRT-LLM ensemble template assets
+    mkdir -p $out/share/${pname}/trtllm-templates
+    for f in ${../../scripts/trtllm-templates}/*; do
+      cp "$f" $out/share/${pname}/trtllm-templates/
+    done
+
     mkdir -p $out/share/${pname}
     cat > $out/share/${pname}/flox-build-version-${toString buildVersion} <<'MARKER'
 build-version: ${toString buildVersion}

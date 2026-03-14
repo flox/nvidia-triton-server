@@ -10,10 +10,16 @@
 #   Tier 2: Repo-local models from $FLOX_ENV_PROJECT/models/
 #           (real dirs only, assembled with symlinks)
 #
+#   Tier 3: External local models from $TRITON_LOCAL_MODELS/
+#           (user-provided engine+tokenizer dirs)
+#
 # Tier 1 wins on name collision (same precedence as triton-setup-backends).
 #
 # For models with config.pbtxt.template, @TOKEN@ placeholders are expanded
 # to runtime paths and the result is written as config.pbtxt.
+#
+# After all tiers are assembled, TRT-LLM models that lack an ensemble
+# pipeline get one synthesized automatically from bundled templates.
 
 set -euo pipefail
 
@@ -27,10 +33,13 @@ lib::require_var FLOX_ENV_CACHE
 
 FLOX_ENV_PROJECT="${FLOX_ENV_PROJECT:-}"
 TRITON_BACKEND_DIR="${TRITON_BACKEND_DIR:-}"
+TRITON_LOCAL_MODELS="${TRITON_LOCAL_MODELS:-}"
 
 readonly CACHE_MODELS="${FLOX_ENV_CACHE}/models"
 readonly ENV_MODELS="${FLOX_ENV}/share/models"
 readonly PROJECT_MODELS="${FLOX_ENV_PROJECT:+${FLOX_ENV_PROJECT}/models}"
+readonly LOCAL_MODELS="${TRITON_LOCAL_MODELS}"
+readonly TRTLLM_TEMPLATES="${FLOX_ENV}/share/triton-server/trtllm-templates"
 
 # ── helpers ──────────────────────────────────────────────────────────
 
@@ -39,6 +48,7 @@ _expand_template() {
   local template="$1"
   local output="$2"
   local model_cache_dir="$3"
+  local model_name="${4:-}"
 
   # Resolve executor worker path
   local executor_worker=""
@@ -65,6 +75,7 @@ _expand_template() {
 
   # Expand tokens using sed with | delimiter (paths contain / but not |)
   sed \
+    -e "s|@MODEL_NAME@|${model_name}|g" \
     -e "s|@EXECUTOR_WORKER_PATH@|${executor_worker}|g" \
     -e "s|@GPT_MODEL_PATH@|${gpt_model_path}|g" \
     -e "s|@TOKENIZER_DIR@|${tokenizer_dir}|g" \
@@ -96,7 +107,7 @@ _assemble_model() {
 
   # Handle config.pbtxt.template → config.pbtxt expansion
   if [[ -f "${src}/config.pbtxt.template" ]]; then
-    _expand_template "${src}/config.pbtxt.template" "${dst}/config.pbtxt" "$dst"
+    _expand_template "${src}/config.pbtxt.template" "${dst}/config.pbtxt" "$dst" "$name"
     lib::verbose "  expanded: ${name}/config.pbtxt.template -> config.pbtxt"
   elif [[ -f "${src}/config.pbtxt" ]]; then
     ln -sf "${src}/config.pbtxt" "${dst}/config.pbtxt"
@@ -116,6 +127,68 @@ _assemble_model() {
   done
 }
 
+# ── TRT-LLM ensemble synthesis ──────────────────────────────────────
+
+_is_trtllm_model() {
+  # Returns 0 if the cached model has an engine/ directory (TRT-LLM model).
+  [[ -d "${CACHE_MODELS}/${1}/engine" ]]
+}
+
+_needs_ensemble_synthesis() {
+  # Returns 0 if this TRT-LLM model needs ensemble synthesis
+  # (i.e. it has engine/ but no sibling _preprocessing dir in the cache).
+  local name="$1"
+  _is_trtllm_model "$name" && [[ ! -d "${CACHE_MODELS}/${name}_preprocessing" ]]
+}
+
+_synthesize_trtllm_ensemble() {
+  # Synthesize the full ensemble pipeline for a TRT-LLM model.
+  # Creates {name}_preprocessing, {name}_postprocessing, {name}_ensemble
+  # directories in CACHE_MODELS using bundled template assets.
+  local name="$1"
+  local raw_dir="${CACHE_MODELS}/${name}"
+
+  if [[ ! -d "$TRTLLM_TEMPLATES" ]]; then
+    lib::warn "triton-setup-models: TRT-LLM templates not found at ${TRTLLM_TEMPLATES}; skipping synthesis for ${name}"
+    return
+  fi
+
+  # If the raw model has no config.pbtxt, generate one from the template
+  if [[ ! -f "${raw_dir}/config.pbtxt" ]]; then
+    _expand_template "${TRTLLM_TEMPLATES}/raw_config.pbtxt.template" "${raw_dir}/config.pbtxt" "$raw_dir" "$name"
+    lib::verbose "  synthesized: ${name}/config.pbtxt"
+  fi
+
+  # Resolve the tokenizer path from the raw model (needed for sibling dirs)
+  local tokenizer_dir=""
+  if [[ -e "${raw_dir}/tokenizer" ]]; then
+    tokenizer_dir="$(readlink -f "${raw_dir}/tokenizer")"
+  fi
+
+  # --- preprocessing ---
+  local pre_dir="${CACHE_MODELS}/${name}_preprocessing"
+  mkdir -p "${pre_dir}/1"
+  cp "${TRTLLM_TEMPLATES}/preprocessing_model.py" "${pre_dir}/1/model.py"
+  [[ -z "$tokenizer_dir" ]] || ln -sf "$tokenizer_dir" "${pre_dir}/tokenizer"
+  _expand_template "${TRTLLM_TEMPLATES}/preprocessing_config.pbtxt.template" "${pre_dir}/config.pbtxt" "$pre_dir" "$name"
+
+  # --- postprocessing ---
+  local post_dir="${CACHE_MODELS}/${name}_postprocessing"
+  mkdir -p "${post_dir}/1"
+  cp "${TRTLLM_TEMPLATES}/postprocessing_model.py" "${post_dir}/1/model.py"
+  [[ -z "$tokenizer_dir" ]] || ln -sf "$tokenizer_dir" "${post_dir}/tokenizer"
+  _expand_template "${TRTLLM_TEMPLATES}/postprocessing_config.pbtxt.template" "${post_dir}/config.pbtxt" "$post_dir" "$name"
+
+  # --- ensemble (BLS) ---
+  local ens_dir="${CACHE_MODELS}/${name}_ensemble"
+  mkdir -p "${ens_dir}/1"
+  cp "${TRTLLM_TEMPLATES}/ensemble_model.py" "${ens_dir}/1/model.py"
+  [[ -z "$tokenizer_dir" ]] || ln -sf "$tokenizer_dir" "${ens_dir}/tokenizer"
+  _expand_template "${TRTLLM_TEMPLATES}/ensemble_config.pbtxt.template" "${ens_dir}/config.pbtxt" "$ens_dir" "$name"
+
+  lib::log "triton-setup-models: synthesized ensemble for ${name}"
+}
+
 # ── main ─────────────────────────────────────────────────────────────
 
 lib::log "triton-setup-models: assembling ${CACHE_MODELS}"
@@ -124,8 +197,9 @@ lib::log "triton-setup-models: assembling ${CACHE_MODELS}"
 rm -rf "$CACHE_MODELS"
 mkdir -p "$CACHE_MODELS"
 
-# Track which model names were handled by Tier 1.
+# Track which model names were handled by each tier.
 declare -A tier1_names=()
+declare -A tier2_names=()
 
 # ── Tier 1: package-provided models ──────────────────────────────────
 if [[ -d "$ENV_MODELS" ]]; then
@@ -150,8 +224,39 @@ if [[ -n "$PROJECT_MODELS" && -d "$PROJECT_MODELS" ]]; then
     [[ -z "${tier1_names[$name]+x}" ]] || continue
 
     _assemble_model "$entry" "$name"
+    tier2_names["$name"]=1
     lib::verbose "  tier2: ${name}"
   done
 fi
+
+# ── Tier 3: external local models ───────────────────────────────────
+if [[ -n "$LOCAL_MODELS" && -d "$LOCAL_MODELS" ]]; then
+  for entry in "${LOCAL_MODELS}"/*/; do
+    [[ -d "$entry" ]] || continue
+    name="$(basename "$entry")"
+
+    # Skip if Tier 1 or Tier 2 already owns this name.
+    [[ -z "${tier1_names[$name]+x}" ]] || continue
+    [[ -z "${tier2_names[$name]+x}" ]] || continue
+
+    _assemble_model "$entry" "$name"
+    lib::verbose "  tier3: ${name}"
+  done
+fi
+
+# ── TRT-LLM ensemble synthesis pass ─────────────────────────────────
+# For any TRT-LLM model that has engine/ but no _preprocessing sibling,
+# synthesize the full ensemble pipeline from bundled templates.
+for entry in "${CACHE_MODELS}"/*/; do
+  [[ -d "$entry" ]] || continue
+  name="$(basename "$entry")"
+  # Skip sibling dirs (they are created by synthesis, not inputs to it)
+  [[ "$name" != *_preprocessing ]] || continue
+  [[ "$name" != *_postprocessing ]] || continue
+  [[ "$name" != *_ensemble ]] || continue
+  if _needs_ensemble_synthesis "$name"; then
+    _synthesize_trtllm_ensemble "$name"
+  fi
+done
 
 lib::log "triton-setup-models: done"
