@@ -1,7 +1,7 @@
 {
-  "build_version": 48,
+  "build_version": 50,
   "force_increment": 0,
-  "git_rev": "c607add5d3c14cb5c6de0309acaf916469b80261",
-  "git_rev_short": "c607add",
-  "changelog": "Fix server.load() API call; add --load-model + auto-explicit mode for OpenAI frontend."
+  "git_rev": "1f4bd1ee3df9d8a33691e14cec1672bc895d852b",
+  "git_rev_short": "1f4bd1e",
+  "changelog": "Skip unloaded models in OpenAI frontend engine metadata discovery."
 }
