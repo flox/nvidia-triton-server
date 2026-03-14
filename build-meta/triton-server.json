@@ -1,7 +1,7 @@
 {
-  "build_version": 51,
+  "build_version": 54,
   "force_increment": 0,
-  "git_rev": "e572f56faf0a6b85cb07b19a7cee06c695e88261",
-  "git_rev_short": "e572f56",
-  "changelog": "Auto-detect ensemble model variant in triton-serve for OpenAI frontend."
+  "git_rev": "bea06f42926975301fea0814af58a5410d7258a9",
+  "git_rev_short": "bea06f4",
+  "changelog": "Auto-load sub-models for BLS ensembles in explicit mode."
 }
