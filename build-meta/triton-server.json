@@ -1,7 +1,7 @@
 {
-  "build_version": 42,
+  "build_version": 44,
   "force_increment": 0,
-  "git_rev": "86a603fd93f216dedf4fab55fcfde158c3d9cea0",
-  "git_rev_short": "86a603f",
-  "changelog": "Package OpenAI frontend; fix symlinks; add backend-directory + model-control-mode to frontend."
+  "git_rev": "5c7eed9732f34065f2c7d77b8347d101c2518346",
+  "git_rev_short": "5c7eed9",
+  "changelog": "Fix ModelControlMode pybind11 enum access in OpenAI frontend."
 }
