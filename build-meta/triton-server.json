@@ -1,7 +1,7 @@
 {
-  "build_version": 40,
+  "build_version": 42,
   "force_increment": 0,
-  "git_rev": "13d756ddd8e8a3b3064fd6589277debfe53c0ba2",
-  "git_rev_short": "13d756d",
-  "changelog": "Package OpenAI frontend; fix symlink rejection in manifest SHA; add openai_frontend to PYTHONPATH."
+  "git_rev": "86a603fd93f216dedf4fab55fcfde158c3d9cea0",
+  "git_rev_short": "86a603f",
+  "changelog": "Package OpenAI frontend; fix symlinks; add backend-directory + model-control-mode to frontend."
 }
