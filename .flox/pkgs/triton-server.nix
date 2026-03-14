@@ -423,7 +423,7 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
         ').start(wait_until_ready=True)
     if args.load_model:
         for _model_name in args.load_model:
-            server.load_model(_model_name)'
+            server.load(_model_name)'
 
     mkdir -p $out/share/${pname}
     cat > $out/share/${pname}/flox-build-version-${toString buildVersion} <<'MARKER'
