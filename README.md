@@ -74,6 +74,9 @@ result-triton-server/
     triton/core/          # 4 headers: C API, backend, cache, repo agent
     triton/backend/       # 7 headers: backend development utilities
     triton/common/        # 9 headers: shared utilities (logging, JSON, etc.)
+  share/triton-server/
+    trtllm-templates/         # TRT-LLM ensemble synthesis templates (7 files)
+    flox-build-version-*      # Build version marker
   python/
     tritonserver-*.whl    # Python in-process API bindings
     tritonfrontend-*.whl  # Python HTTP/gRPC frontend bindings
@@ -209,9 +212,13 @@ In the consuming runtime repo (triton-runtime), `triton-setup-backends` automate
 symlink assembly at `flox activate` time. It builds a unified backend directory under
 `$FLOX_ENV_CACHE/backends/` by combining package-provided backends (Tier 1, from the Flox
 profile) with repo-local Python backends (Tier 2, with automatic stub injection from the
-python backend package). Similarly, `triton-setup-models` assembles a model directory
-under `$FLOX_ENV_CACHE/models/` from Nix-store model packages (Tier 1) and repo-local
-models (Tier 2), expanding `config.pbtxt.template` token placeholders at activation time.
+python backend package). Similarly, `triton-setup-models` assembles a model directory under
+`$FLOX_ENV_CACHE/models/` from three tiers: Nix-store model packages (Tier 1), repo-local
+models (Tier 2), and external local models pointed to by `TRITON_LOCAL_MODELS` (Tier 3).
+All tiers expand `config.pbtxt.template` token placeholders (including `@MODEL_NAME@`) at
+activation time. After assembly, any TRT-LLM model that has `engine/` + `tokenizer/` but
+lacks a sibling ensemble pipeline gets one synthesized automatically from bundled templates
+in `share/triton-server/trtllm-templates/`.
 
 ## Building Custom Backends
 
@@ -483,7 +490,7 @@ would need to be added here following the same patterns as the other backends.
 Current build outputs (for use in `store-path` references from consuming environments):
 
 ```
-triton-server:              /nix/store/p7yl6mn4njkr1ax5b18f1wxckhjsd71x-triton-server-2.66.0+c279dda
+triton-server:              /nix/store/grx3m8afpa481dblgsxgdglikxj2g4c0-triton-server-2.66.0+b0b0556
 triton-python-backend:      /nix/store/yhk1sv3ycny5k27nyfimsa4pb9xdin9y-triton-python-backend-2.66.0
 onnxruntime-cuda:           /nix/store/3hys619h5k6bdsp6c2jf2r378q63h354-onnxruntime-cuda-1.24.2
 triton-onnxruntime-backend: /nix/store/x7wsykzn8xrwn1vrf6a7h6k1193i5jcd-triton-onnxruntime-backend-2.66.0
