@@ -25,11 +25,11 @@ let
   # Bundle is split into two parts to stay under GitHub Releases' 2 GB file size limit.
   # Parts are concatenated during unpackPhase to reconstruct the original tarball.
   bundlePart0 = pkgs.fetchurl {
-    url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part0";
+    url = "https://github.com/flox/nvidia-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part0";
     hash = "sha256-GuC1qCh9I5Z221PLajRWWQIlQYNXTwMV+ayJCysaPZQ=";
   };
   bundlePart1 = pkgs.fetchurl {
-    url = "https://github.com/barstoolbluz/build-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part1";
+    url = "https://github.com/flox/nvidia-triton-server/releases/download/v26.02/trtllm-backend-bundle-26.02.tar.gz.part1";
     hash = "sha256-3oEXvGqp79UjsI9lKDLaks7i/LcKMmBgEomXgXKxSw0=";
   };
 
