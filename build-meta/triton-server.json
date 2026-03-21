@@ -1,7 +1,7 @@
 {
-  "build_version": 57,
+  "build_version": 58,
   "force_increment": 0,
-  "git_rev": "b0b0556f93ad89c4e764f881856073dfb308fc8c",
-  "git_rev_short": "b0b0556",
-  "changelog": "Fix: create version dir for synthesized TRT-LLM raw models."
+  "git_rev": "6f6f408c0375b4287bf69927092978fcbf6c39a2",
+  "git_rev_short": "6f6f408",
+  "changelog": "triton-preflight: replace torch GPU tier with ctypes NVML/CUDA driver probe."
 }
