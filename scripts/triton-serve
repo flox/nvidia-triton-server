@@ -25,6 +25,7 @@
 #   TRITON_OPENAI_PORT          OpenAI frontend port (default: 9000)
 #   TRITON_OPENAI_MAIN          Path to OpenAI frontend main.py (auto-discovered)
 #   TRITON_OPENAI_TOKENIZER     HF tokenizer for chat templates
+#   TRITON_DEFAULT_MAX_TOKENS   Default max_tokens for OpenAI frontend (default: 1024)
 #   TRITON_HOST                 Bind address (default: 0.0.0.0)
 #   FLOX_ENV_CACHE              Fallback state directory for env file path derivation
 #
@@ -440,6 +441,7 @@ _log_effective_config() {
   lib::log "Protocol flags: http=$TRITON_ALLOW_HTTP grpc=$TRITON_ALLOW_GRPC metrics=$TRITON_ALLOW_METRICS strict_readiness=$TRITON_STRICT_READINESS"
   if [[ "$mode" == "openai" ]]; then
     lib::log "OpenAI frontend port: $TRITON_OPENAI_PORT"
+    lib::log "Default max tokens: $TRITON_DEFAULT_MAX_TOKENS"
   else
     lib::log "Model control mode: $TRITON_MODEL_CONTROL_MODE"
   fi
@@ -603,6 +605,7 @@ TRITON_OPENAI_FRONTEND="${TRITON_OPENAI_FRONTEND:-false}"
 TRITON_OPENAI_PORT="${TRITON_OPENAI_PORT:-9000}"
 TRITON_OPENAI_MAIN="${TRITON_OPENAI_MAIN:-}"
 TRITON_OPENAI_TOKENIZER="${TRITON_OPENAI_TOKENIZER:-}"
+TRITON_DEFAULT_MAX_TOKENS="${TRITON_DEFAULT_MAX_TOKENS:-1024}"
 TRITON_HOST="${TRITON_HOST:-0.0.0.0}"
 
 TRITON_SERVE_RUN_PREFLIGHT="${TRITON_SERVE_RUN_PREFLIGHT:-true}"
@@ -645,6 +648,7 @@ TRITON_OPENAI_FRONTEND="${TRITON_OPENAI_FRONTEND:-false}"
 TRITON_OPENAI_PORT="${TRITON_OPENAI_PORT:-9000}"
 TRITON_OPENAI_MAIN="${TRITON_OPENAI_MAIN:-}"
 TRITON_OPENAI_TOKENIZER="${TRITON_OPENAI_TOKENIZER:-}"
+TRITON_DEFAULT_MAX_TOKENS="${TRITON_DEFAULT_MAX_TOKENS:-1024}"
 TRITON_HOST="${TRITON_HOST:-0.0.0.0}"
 
 for _bvar in TRITON_OPENAI_FRONTEND TRITON_STRICT_READINESS TRITON_ALLOW_HTTP TRITON_ALLOW_GRPC TRITON_ALLOW_METRICS; do
@@ -657,6 +661,10 @@ for _pvar in TRITON_HTTP_PORT TRITON_GRPC_PORT TRITON_METRICS_PORT; do
 done
 if lib::is_truthy "$TRITON_OPENAI_FRONTEND"; then
   _require_port_range TRITON_OPENAI_PORT
+fi
+
+if [[ -n "${TRITON_DEFAULT_MAX_TOKENS:-}" ]]; then
+  lib::require_pos_int TRITON_DEFAULT_MAX_TOKENS
 fi
 
 _validate_host "$TRITON_HOST" || lib::die "TRITON_HOST is invalid or unresolvable: $TRITON_HOST"
@@ -733,6 +741,7 @@ if lib::is_truthy "$TRITON_OPENAI_FRONTEND"; then
     --model-repository="$TRITON_MODEL_REPOSITORY"
     --openai-port="$TRITON_OPENAI_PORT"
     --host="$TRITON_HOST"
+    --default-max-tokens="$TRITON_DEFAULT_MAX_TOKENS"
   )
 
   if [[ -n "$TRITON_BACKEND_DIR" ]]; then
