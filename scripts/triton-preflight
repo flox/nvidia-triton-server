@@ -24,6 +24,9 @@
 #   TRITON_OPENAI_FRONTEND   Enable OpenAI-compatible frontend (default: false)
 #   TRITON_OPENAI_PORT       OpenAI frontend port (default: 9000)
 #   TRITON_GPU_WARN_PCT      Warn if GPU memory usage exceeds this % (default: 50)
+#   TRITON_MAX_GPU_TEMP_C    Hard-fail if GPU temp exceeds this (default: 85)
+#   TRITON_MAX_GPU_UTIL_PCT  Hard-fail if GPU utilization exceeds this % (default: 95)
+#   TRITON_GPU_FAIL_ON       Comma-separated: temperature,memory,utilization (default: temperature)
 #   TRITON_SKIP_GPU_CHECK    Skip GPU checks (default: 0)
 #   TRITON_DRY_RUN           Report only, don't kill (default: 0)
 #   TRITON_PREFLIGHT_JSON    Machine-readable JSON on stdout (default: 0)
@@ -422,6 +425,7 @@ trap on_err ERR
 cleanup_tmpfiles() {
   [[ -n "${_json_tmp:-}" ]] && rm -f -- "$_json_tmp" 2>/dev/null || true
   [[ -n "${_json_ok_file:-}" ]] && rm -f -- "$_json_ok_file" 2>/dev/null || true
+  [[ -n "${_gpu_json_tmp:-}" ]] && rm -f -- "$_gpu_json_tmp" 2>/dev/null || true
 }
 trap cleanup_tmpfiles EXIT
 
@@ -436,6 +440,9 @@ TRITON_OPENAI_FRONTEND="${TRITON_OPENAI_FRONTEND:-false}"
 TRITON_OPENAI_PORT="${TRITON_OPENAI_PORT:-9000}"
 
 TRITON_GPU_WARN_PCT="${TRITON_GPU_WARN_PCT:-50}"
+TRITON_MAX_GPU_TEMP_C="${TRITON_MAX_GPU_TEMP_C:-85}"
+TRITON_MAX_GPU_UTIL_PCT="${TRITON_MAX_GPU_UTIL_PCT:-95}"
+TRITON_GPU_FAIL_ON="${TRITON_GPU_FAIL_ON:-temperature}"
 TRITON_SKIP_GPU_CHECK="${TRITON_SKIP_GPU_CHECK:-0}"
 
 TRITON_DRY_RUN="${TRITON_DRY_RUN:-0}"
@@ -459,6 +466,8 @@ for _pvar in TRITON_HTTP_PORT TRITON_GRPC_PORT TRITON_METRICS_PORT; do
 done
 
 is_num "$TRITON_GPU_WARN_PCT" || die "TRITON_GPU_WARN_PCT must be numeric (got: $TRITON_GPU_WARN_PCT)" 1 "validation"
+is_int "$TRITON_MAX_GPU_TEMP_C" || die "TRITON_MAX_GPU_TEMP_C must be an integer (got: $TRITON_MAX_GPU_TEMP_C)" 1 "validation"
+is_int "$TRITON_MAX_GPU_UTIL_PCT" || die "TRITON_MAX_GPU_UTIL_PCT must be an integer (got: $TRITON_MAX_GPU_UTIL_PCT)" 1 "validation"
 is_num "$TRITON_TERM_GRACE" || die "TRITON_TERM_GRACE must be numeric (got: $TRITON_TERM_GRACE)" 1 "validation"
 is_num "$TRITON_PORT_FREE_TIMEOUT" || die "TRITON_PORT_FREE_TIMEOUT must be numeric (got: $TRITON_PORT_FREE_TIMEOUT)" 1 "validation"
 
@@ -492,12 +501,15 @@ esac
 # Python range checks
 if command -v python3 >/dev/null 2>&1; then
   _range_err=$(mktemp)
-  if python3 - "$TRITON_GPU_WARN_PCT" "$TRITON_TERM_GRACE" "$TRITON_PORT_FREE_TIMEOUT" 2>"$_range_err" <<'PY'
+  if python3 - "$TRITON_GPU_WARN_PCT" "$TRITON_TERM_GRACE" "$TRITON_PORT_FREE_TIMEOUT" "$TRITON_MAX_GPU_TEMP_C" "$TRITON_MAX_GPU_UTIL_PCT" 2>"$_range_err" <<'PY'
 import sys
 warn = float(sys.argv[1]); grace = float(sys.argv[2]); timeout = float(sys.argv[3])
+max_temp = int(sys.argv[4]); max_util = int(sys.argv[5])
 if not (0 <= warn <= 100): raise SystemExit("TRITON_GPU_WARN_PCT must be 0..100")
 if grace < 0: raise SystemExit("TRITON_TERM_GRACE must be >= 0")
 if timeout < 0: raise SystemExit("TRITON_PORT_FREE_TIMEOUT must be >= 0")
+if max_temp < 1: raise SystemExit("TRITON_MAX_GPU_TEMP_C must be >= 1")
+if not (0 <= max_util <= 100): raise SystemExit("TRITON_MAX_GPU_UTIL_PCT must be 0..100")
 PY
   then
     :
@@ -509,6 +521,15 @@ PY
     die "${_msg:-Numeric range validation failed}" 1 "validation"
   fi
   rm -f "$_range_err" || true
+
+  # Validate TRITON_GPU_FAIL_ON tokens
+  python3 - "$TRITON_GPU_FAIL_ON" <<'PY_FAIL_ON' || die "TRITON_GPU_FAIL_ON validation failed" 1 "validation"
+import sys
+tokens = set(t.strip().lower() for t in sys.argv[1].split(',') if t.strip())
+valid = {'temperature','memory','utilization'}
+bad = tokens - valid
+if bad: raise SystemExit(f'TRITON_GPU_FAIL_ON contains unknown token(s): {", ".join(sorted(bad))}. Valid: {", ".join(sorted(valid))}')
+PY_FAIL_ON
 else
   die "python3 not found" 1 "prereq"
 fi
@@ -1309,98 +1330,458 @@ fi
 
 # --- GPU health check ---
 
+_gpu_json_tmp=""
 if [[ "$TRITON_SKIP_GPU_CHECK" != "1" ]]; then
-  if python3 -c "import torch" >/dev/null 2>&1; then
-    if python3 - "$TRITON_GPU_WARN_PCT" <<'PY'
-import sys, json, os
+  _gpu_json_tmp=$(mktemp)
+  if python3 - "$TRITON_GPU_WARN_PCT" "$TRITON_MAX_GPU_TEMP_C" "$TRITON_MAX_GPU_UTIL_PCT" "$TRITON_GPU_FAIL_ON" >"$_gpu_json_tmp" <<'PY'
+import ctypes, json, shutil, subprocess, sys
+from ctypes import c_int, c_uint, c_ulonglong, c_char_p, c_void_p, POINTER, byref, Structure
+from typing import List, Optional, Set, Tuple
 
 warn_pct = float(sys.argv[1])
-want_json = (os.environ.get("TRITON_PREFLIGHT_JSON", "0") == "1")
+max_temp_c = int(sys.argv[2])
+max_util_pct = int(sys.argv[3])
+fail_on = set(t.strip().lower() for t in sys.argv[4].split(",") if t.strip())
 
-def emit_error(message: str):
-    if want_json:
-        print(json.dumps({"status":"error","code":1,"stage":"gpu_check","message":message}, separators=(",", ":")))
+_NVML_TEMPERATURE_GPU = 0
+_NVML_PSTATE_UNKNOWN = 32
 
-try:
-    import torch
 
-    if not torch.cuda.is_available():
-        print("ERROR: No CUDA GPUs available.", file=sys.stderr)
-        emit_error("No CUDA GPUs available")
+def log(msg: str):
+    print(msg, file=sys.stderr)
+
+
+def _dlopen_first(names: List[str]):
+    """Try to dlopen the first available shared library from a list of names."""
+    for name in names:
+        try:
+            return ctypes.CDLL(name)
+        except OSError:
+            continue
+    return None
+
+
+def _cuda_driver_probe() -> dict:
+    """Probe CUDA driver via ctypes dlopen of libcuda.so.1."""
+    out = {"driver_present": False, "device_count": 0, "driver_version": None, "error": None}
+    lib = _dlopen_first(["libcuda.so.1", "libcuda.so"])
+    if not lib:
+        out["error"] = "CUDA driver library not found (libcuda.so.1)."
+        return out
+    try:
+        cuInit = lib.cuInit
+        cuInit.argtypes = [c_uint]
+        cuInit.restype = c_int
+
+        cuDeviceGetCount = lib.cuDeviceGetCount
+        cuDeviceGetCount.argtypes = [POINTER(c_int)]
+        cuDeviceGetCount.restype = c_int
+
+        cuDriverGetVersion = getattr(lib, "cuDriverGetVersion", None)
+        if cuDriverGetVersion is not None:
+            cuDriverGetVersion.argtypes = [POINTER(c_int)]
+            cuDriverGetVersion.restype = c_int
+
+        rc = cuInit(0)
+        if rc != 0:
+            out["error"] = f"CUDA driver init failed (cuInit returned {rc})."
+            return out
+
+        n = c_int(0)
+        rc = cuDeviceGetCount(byref(n))
+        if rc != 0:
+            out["error"] = f"CUDA device query failed (cuDeviceGetCount returned {rc})."
+            return out
+
+        out["driver_present"] = True
+        out["device_count"] = int(n.value)
+
+        if cuDriverGetVersion is not None:
+            v = c_int(0)
+            rc = cuDriverGetVersion(byref(v))
+            if rc == 0:
+                out["driver_version"] = int(v.value)
+
+        return out
+    except Exception as e:
+        out["error"] = f"CUDA probe raised: {e}"
+        return out
+
+
+def _gpu_check_nvml(warn_pct_: float, max_temp_c_: int, max_util_pct_: int, fail_on_: Set[str]) -> Optional[Tuple[List[dict], List[str]]]:
+    """Tier 1: GPU health via ctypes NVML/CUDA driver probe."""
+    cuda = _cuda_driver_probe()
+    if not cuda["driver_present"]:
+        if cuda["error"]:
+            log(f"WARNING: CUDA driver probe: {cuda['error']}")
+        return None  # fall through to nvidia-smi
+
+    if cuda["device_count"] == 0:
+        log("ERROR: CUDA driver present but 0 devices visible. "
+            "If running in a container, ensure it was started with GPU access "
+            "(e.g. --gpus all or NVIDIA_VISIBLE_DEVICES=all).")
         sys.exit(1)
 
-    n = torch.cuda.device_count()
-    for i in range(n):
-        props = torch.cuda.get_device_properties(i)
-        total = props.total_memory
-        free, _ = torch.cuda.mem_get_info(i)
-        used_pct = (total - free) / total * 100.0 if total > 0 else 0.0
-        print(f"GPU {i}: {props.name} -- {free // 1048576}MiB free / {total // 1048576}MiB total ({used_pct:.0f}% used)", file=sys.stderr)
-        if used_pct > warn_pct:
-            print(f"WARNING: GPU {i} memory is {used_pct:.0f}% consumed before Triton starts.", file=sys.stderr)
-except Exception as e:
-    msg = f"GPU check exception: {e}"
-    print(f"ERROR: {msg}", file=sys.stderr)
-    emit_error(msg)
-    sys.exit(1)
-PY
-    then
-      :
-    else
-      exit $?
-    fi
-  else
-    if command -v nvidia-smi >/dev/null 2>&1; then
-      if python3 - "$TRITON_GPU_WARN_PCT" <<'PY'
-import subprocess, sys, json, os
-warn_pct = float(sys.argv[1])
-want_json = (os.environ.get("TRITON_PREFLIGHT_JSON", "0") == "1")
+    if cuda.get("driver_version"):
+        v = cuda["driver_version"]
+        log(f"INFO: CUDA driver version {v // 1000}.{(v % 1000) // 10}")
 
-def emit_error(message: str):
-    if want_json:
-        print(json.dumps({"status":"error","code":1,"stage":"gpu_check","message":message}, separators=(",", ":")))
+    # Phase 2 — NVML detailed query
+    lib = _dlopen_first(["libnvidia-ml.so.1", "libnvidia-ml.so"])
+    if not lib:
+        log("WARNING: CUDA driver present but libnvidia-ml.so.1 not found; falling through")
+        return None
 
-try:
+    def _nvml_err_str(code: int) -> str:
+        try:
+            fn = lib.nvmlErrorString
+            fn.argtypes = [c_int]
+            fn.restype = c_char_p
+            s = fn(code)
+            return s.decode("utf-8", "replace") if s else f"NVML error {code}"
+        except Exception:
+            return f"NVML error {code}"
+
+    def _nvml_call(fn, *args):
+        rc = fn(*args)
+        if rc != 0:
+            raise RuntimeError(_nvml_err_str(int(rc)))
+
+    init_fn = getattr(lib, "nvmlInit_v2", None) or getattr(lib, "nvmlInit", None)
+    shutdown_fn = getattr(lib, "nvmlShutdown", None)
+    if init_fn is None or shutdown_fn is None:
+        log("WARNING: NVML init/shutdown symbols missing; falling through")
+        return None
+
+    init_fn.restype = c_int
+    shutdown_fn.restype = c_int
+
     try:
-        out = subprocess.check_output(
-            ["nvidia-smi", "--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"],
-            text=True, stderr=subprocess.STDOUT,
-        )
-    except Exception as e:
-        # Best-effort fallback: skip GPU check if nvidia-smi isn't usable.
-        print(f"WARNING: GPU check skipped (torch unavailable; nvidia-smi failed: {e})", file=sys.stderr)
-        sys.exit(0)
+        _nvml_call(init_fn)
+    except RuntimeError as e:
+        log(f"WARNING: NVML init failed: {e}; falling through")
+        return None
 
-    for idx, line in enumerate(out.strip().splitlines()):
-        parts = [p.strip() for p in line.rsplit(",", 2)]
-        if len(parts) != 3:
-            print(f"WARNING: Unexpected nvidia-smi output line: {line}", file=sys.stderr)
-            continue
-        name, total, free = parts
-        total = float(total); free = float(free)
-        used_pct = (total - free) / total * 100.0 if total > 0 else 0.0
-        print(f"GPU {idx}: {name} -- {int(free)}MiB free / {int(total)}MiB total ({used_pct:.0f}% used)", file=sys.stderr)
-        if used_pct > warn_pct:
-            print(f"WARNING: GPU {idx} memory is {used_pct:.0f}% consumed before Triton starts.", file=sys.stderr)
-except Exception as e:
-    # Treat unexpected issues as a hard failure, but emit one JSON object when requested.
-    msg = f"GPU check exception (nvidia-smi): {e}"
-    print(f"ERROR: {msg}", file=sys.stderr)
-    emit_error(msg)
+    try:
+        get_count = getattr(lib, "nvmlDeviceGetCount_v2", None) or getattr(lib, "nvmlDeviceGetCount", None)
+        get_handle = getattr(lib, "nvmlDeviceGetHandleByIndex_v2", None) or getattr(lib, "nvmlDeviceGetHandleByIndex", None)
+        get_mem = getattr(lib, "nvmlDeviceGetMemoryInfo", None)
+
+        if not (get_count and get_handle and get_mem):
+            log("WARNING: NVML device query symbols missing; falling through")
+            return None
+
+        get_count.argtypes = [POINTER(c_uint)]
+        get_count.restype = c_int
+        get_handle.argtypes = [c_uint, POINTER(c_void_p)]
+        get_handle.restype = c_int
+
+        class NvmlMemory(Structure):
+            _fields_ = [("total", c_ulonglong), ("free", c_ulonglong), ("used", c_ulonglong)]
+
+        get_mem.argtypes = [c_void_p, POINTER(NvmlMemory)]
+        get_mem.restype = c_int
+
+        get_temp = getattr(lib, "nvmlDeviceGetTemperature", None)
+        if get_temp:
+            get_temp.argtypes = [c_void_p, c_int, POINTER(c_uint)]
+            get_temp.restype = c_int
+
+        get_util = getattr(lib, "nvmlDeviceGetUtilizationRates", None)
+
+        class NvmlUtilization(Structure):
+            _fields_ = [("gpu", c_uint), ("memory", c_uint)]
+
+        if get_util:
+            get_util.argtypes = [c_void_p, POINTER(NvmlUtilization)]
+            get_util.restype = c_int
+
+        get_pstate = getattr(lib, "nvmlDeviceGetPerformanceState", None)
+        if get_pstate:
+            get_pstate.argtypes = [c_void_p, POINTER(c_int)]
+            get_pstate.restype = c_int
+
+        get_clocks = getattr(lib, "nvmlDeviceGetCurrentClocksEventReasons", None)
+        if get_clocks:
+            get_clocks.argtypes = [c_void_p, POINTER(c_ulonglong)]
+            get_clocks.restype = c_int
+
+        get_name = getattr(lib, "nvmlDeviceGetName", None)
+        if get_name:
+            get_name.argtypes = [c_void_p, c_char_p, c_uint]
+            get_name.restype = c_int
+
+        cnt = c_uint(0)
+        _nvml_call(get_count, byref(cnt))
+
+        per_gpu: List[dict] = []
+        failures: List[str] = []
+        min_free_pct = warn_pct_  # warn_pct is used-pct threshold; convert to free check below
+
+        for idx in range(int(cnt.value)):
+            h = c_void_p()
+            _nvml_call(get_handle, c_uint(idx), byref(h))
+
+            # Device name (optional)
+            device_name: Optional[str] = None
+            if get_name:
+                try:
+                    buf = ctypes.create_string_buffer(256)
+                    _nvml_call(get_name, h, buf, c_uint(256))
+                    device_name = buf.value.decode("utf-8", "replace")
+                except Exception:
+                    pass
+
+            # Memory (required)
+            mem = NvmlMemory()
+            _nvml_call(get_mem, h, byref(mem))
+            total_mib = int(mem.total // (1024 * 1024))
+            free_mib = int(mem.free // (1024 * 1024))
+
+            # Temperature (optional)
+            temperature_c: Optional[int] = None
+            if get_temp:
+                try:
+                    temp_val = c_uint(0)
+                    _nvml_call(get_temp, h, c_int(_NVML_TEMPERATURE_GPU), byref(temp_val))
+                    temperature_c = int(temp_val.value)
+                except Exception:
+                    pass
+
+            # Utilization (optional)
+            utilization_pct: Optional[int] = None
+            if get_util:
+                try:
+                    util = NvmlUtilization()
+                    _nvml_call(get_util, h, byref(util))
+                    utilization_pct = int(util.gpu)
+                except Exception:
+                    pass
+
+            # Performance state (optional)
+            pstate: Optional[str] = None
+            if get_pstate:
+                try:
+                    ps = c_int(0)
+                    _nvml_call(get_pstate, h, byref(ps))
+                    ps_val = int(ps.value)
+                    if ps_val != _NVML_PSTATE_UNKNOWN:
+                        pstate = f"P{ps_val}"
+                except Exception:
+                    pass
+
+            # Clock event reasons (optional)
+            clocks_event_reasons: Optional[str] = None
+            if get_clocks:
+                try:
+                    reasons = c_ulonglong(0)
+                    _nvml_call(get_clocks, h, byref(reasons))
+                    clocks_event_reasons = f"0x{int(reasons.value):016x}"
+                except Exception:
+                    pass
+
+            # Log device summary
+            name_str = f"{device_name} -- " if device_name else ""
+            used_pct = (total_mib - free_mib) / total_mib * 100.0 if total_mib > 0 else 0.0
+            log(f"GPU {idx}: {name_str}{free_mib}MiB free / {total_mib}MiB total ({used_pct:.0f}% used)")
+
+            # Threshold checks
+            warnings: List[str] = []
+            if used_pct > min_free_pct:
+                msg = f"GPU {idx} memory is {used_pct:.0f}% consumed before Triton starts."
+                if "memory" in fail_on_:
+                    failures.append(msg)
+                else:
+                    warnings.append(msg)
+            if temperature_c is not None and temperature_c > max_temp_c_:
+                msg = f"GPU {idx} temperature too high: {temperature_c}C > {max_temp_c_}C"
+                if "temperature" in fail_on_:
+                    failures.append(msg)
+                else:
+                    warnings.append(msg)
+            if utilization_pct is not None and utilization_pct > max_util_pct_:
+                msg = f"GPU {idx} high utilization: {utilization_pct}% > {max_util_pct_}%"
+                if "utilization" in fail_on_:
+                    failures.append(msg)
+                else:
+                    warnings.append(msg)
+            if clocks_event_reasons is not None and clocks_event_reasons not in ("0x0000000000000000",):
+                warnings.append(f"GPU {idx} clocks event active: {clocks_event_reasons}")
+
+            per_gpu.append({
+                "index": idx,
+                "name": device_name,
+                "memory_total_mib": total_mib,
+                "memory_free_mib": free_mib,
+                "temperature_c": temperature_c,
+                "utilization_pct": utilization_pct,
+                "pstate": pstate,
+                "clocks_event_reasons_active": clocks_event_reasons,
+                "warnings": warnings,
+            })
+
+        if not per_gpu:
+            log("ERROR: NVML reports 0 GPUs after device enumeration")
+            sys.exit(1)
+
+        return per_gpu, failures
+    except RuntimeError as e:
+        log(f"WARNING: NVML query failed: {e}; falling through")
+        return None
+    finally:
+        try:
+            shutdown_fn()
+        except Exception:
+            pass
+
+
+def _gpu_check_nvidia_smi(warn_pct_: float, max_temp_c_: int, max_util_pct_: int, fail_on_: Set[str]) -> Optional[Tuple[List[dict], List[str]]]:
+    """Tier 2: GPU health via nvidia-smi."""
+    exe = shutil.which("nvidia-smi")
+    if not exe:
+        log("WARNING: nvidia-smi not found in PATH")
+        return None
+
+    cmd = [
+        exe,
+        "--query-gpu=index,name,memory.total,memory.free,temperature.gpu,utilization.gpu,pstate,clocks_event_reasons.active",
+        "--format=csv,noheader,nounits",
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except OSError as e:
+        log(f"WARNING: Failed to execute nvidia-smi: {e}")
+        return None
+    if proc.returncode != 0:
+        msg = proc.stderr.strip() or proc.stdout.strip() or "nvidia-smi failed"
+        log(f"WARNING: nvidia-smi returned non-zero exit code: {msg}")
+        return None
+
+    rows: List[List[str]] = []
+    for line in proc.stdout.strip().splitlines():
+        parts = [x.strip() for x in line.split(",")]
+        if len(parts) < 8:
+            log(f"ERROR: Unexpected nvidia-smi output row: {line}")
+            sys.exit(1)
+        rows.append(parts[:8])
+    if not rows:
+        log("ERROR: No GPUs reported by nvidia-smi")
+        sys.exit(1)
+
+    per_gpu: List[dict] = []
+    failures: List[str] = []
+
+    for parts in rows:
+        idx_s, name, total_s, free_s, temp_s, util_s, pstate, clocks_reason = parts
+        try:
+            idx = int(idx_s)
+            total_mib = int(float(total_s))
+            free_mib = int(float(free_s))
+            temp_c = int(float(temp_s))
+            util_pct = int(float(util_s))
+        except ValueError:
+            log(f"ERROR: Unparseable nvidia-smi row: {parts}")
+            sys.exit(1)
+
+        used_pct = (total_mib - free_mib) / total_mib * 100.0 if total_mib > 0 else 0.0
+        log(f"GPU {idx}: {name} -- {free_mib}MiB free / {total_mib}MiB total ({used_pct:.0f}% used)")
+
+        warnings: List[str] = []
+        if used_pct > warn_pct_:
+            msg = f"GPU {idx} memory is {used_pct:.0f}% consumed before Triton starts."
+            if "memory" in fail_on_:
+                failures.append(msg)
+            else:
+                warnings.append(msg)
+        if temp_c > max_temp_c_:
+            msg = f"GPU {idx} temperature too high: {temp_c}C > {max_temp_c_}C"
+            if "temperature" in fail_on_:
+                failures.append(msg)
+            else:
+                warnings.append(msg)
+        if util_pct > max_util_pct_:
+            msg = f"GPU {idx} high utilization: {util_pct}% > {max_util_pct_}%"
+            if "utilization" in fail_on_:
+                failures.append(msg)
+            else:
+                warnings.append(msg)
+        if clocks_reason not in ("N/A", "None", "Not Active", "", "0", "0x0000000000000000"):
+            warnings.append(f"GPU {idx} clocks event active: {clocks_reason}")
+
+        per_gpu.append({
+            "index": idx,
+            "name": name,
+            "memory_total_mib": total_mib,
+            "memory_free_mib": free_mib,
+            "temperature_c": temp_c,
+            "utilization_pct": util_pct,
+            "pstate": pstate,
+            "clocks_event_reasons_active": clocks_reason,
+            "warnings": warnings,
+        })
+
+    return per_gpu, failures
+
+
+# --- Main GPU check orchestration ---
+
+# Tier 1: NVML (ctypes probe)
+result = _gpu_check_nvml(warn_pct, max_temp_c, max_util_pct, fail_on)
+source = None
+if result is not None:
+    log("INFO: GPU health check via NVML")
+    per_gpu, failures = result
+    source = "nvml"
+else:
+    # Tier 2: nvidia-smi
+    result = _gpu_check_nvidia_smi(warn_pct, max_temp_c, max_util_pct, fail_on)
+    if result is not None:
+        log("INFO: GPU health check via nvidia-smi")
+        per_gpu, failures = result
+        source = "nvidia-smi"
+    else:
+        # Tier 3: skip
+        log("WARNING: No GPU health check available (NVML and nvidia-smi both unavailable); proceeding without GPU validation")
+        per_gpu, failures, source = [], [], "skipped"
+
+# Emit warnings
+for g in per_gpu:
+    for w in g.get("warnings", []):
+        log(f"WARNING: {w}")
+
+# Hard-fail on threshold breaches
+if failures:
+    for f in failures:
+        log(f"ERROR: {f}")
     sys.exit(1)
+
+# Write JSON to stdout (captured to temp file by Bash wrapper)
+print(json.dumps({"gpu_check_source": source, "gpus": per_gpu}, separators=(",", ":")))
 PY
-      then
-        :
-      else
-        exit $?
-      fi
-    else
-      warn "GPU check skipped (torch unavailable and nvidia-smi not found)."
+  then
+    :
+  else
+    _gpu_rc=$?
+    if [[ "$TRITON_PREFLIGHT_JSON" == "1" ]]; then
+      emit_json_error "$_gpu_rc" "GPU health check failed" "gpu_check"
     fi
+    exit "$_gpu_rc"
   fi
+else
+  warn "GPU check skipped (TRITON_SKIP_GPU_CHECK=1)."
 fi
 
-# --- Run downstream command if provided ---
+# --- Merge GPU data into JSON success payload ---
+
+if [[ "$TRITON_PREFLIGHT_JSON" == "1" && -n "${_json_ok_file:-}" && -s "${_gpu_json_tmp:-}" ]]; then
+  python3 -c "
+import json, sys
+base = json.loads(open(sys.argv[1]).read())
+gpu = json.loads(open(sys.argv[2]).read())
+base.update(gpu)
+print(json.dumps(base, separators=(',',':')))
+" "$_json_ok_file" "$_gpu_json_tmp" > "${_json_ok_file}.new" && mv "${_json_ok_file}.new" "$_json_ok_file"
+fi
 
 # --- Finalize / downstream ---
 
