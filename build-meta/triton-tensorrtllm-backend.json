@@ -1,7 +1,7 @@
 {
-  "build_version": 33,
+  "build_version": 34,
   "force_increment": 0,
-  "git_rev": "c279dda8038d78ab5d24092ed9da0a915f5226aa",
-  "git_rev_short": "c279dda",
-  "changelog": "Add hpcx/ OpenMPI prefix to bundle for MPI_Init_thread runtime support."
+  "git_rev": "98d5772d87e68911a1581e6f0e19d2f3b7ee47aa",
+  "git_rev_short": "98d5772",
+  "changelog": "Bump for triton-preflight ctypes NVML/CUDA driver probe."
 }
