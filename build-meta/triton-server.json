@@ -1,7 +1,7 @@
 {
-  "build_version": 61,
+  "build_version": 62,
   "force_increment": 0,
-  "git_rev": "4ee16e4115a6062bc689083f60135bbff9a2f864",
-  "git_rev_short": "4ee16e4",
-  "changelog": "triton-server: add triton-generate-vllm-config to package (available via PATH)."
+  "git_rev": "ae26af8cbde14c79c94c96b36c4f98b43e9270d8",
+  "git_rev_short": "ae26af8",
+  "changelog": "triton-setup-backends: handle Tier 1 Python backends (stub injection + writable __pycache__)."
 }
