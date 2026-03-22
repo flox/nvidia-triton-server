@@ -5,7 +5,8 @@
 # under $FLOX_ENV_CACHE/backends/ by combining:
 #
 #   Tier 1: Package-provided backends from $FLOX_ENV/backends/
-#           (symlinked wholesale — e.g. python, onnxruntime)
+#           (symlinked wholesale for native backends; per-file symlinks
+#            + python stub injection for Python backends)
 #
 #   Tier 2: Repo-local backends from $FLOX_ENV_PROJECT/backends/
 #           (assembled with per-file symlinks, python stub injected)
@@ -67,9 +68,27 @@ if [[ -d "$ENV_BACKENDS" ]]; then
   for entry in "${ENV_BACKENDS}"/*/; do
     [[ -d "$entry" ]] || continue
     name="$(basename "$entry")"
-    ln -sf "$entry" "${CACHE_BACKENDS}/${name}"
+
+    if _is_python_backend "$entry"; then
+      # Python-based Tier 1 backend: use per-file symlinks into a writable
+      # directory (Triton writes __pycache__) and inject the python stub.
+      local_dir="${CACHE_BACKENDS}/${name}"
+      mkdir -p "$local_dir"
+      _symlink_files "$entry" "$local_dir"
+      python_dir="${ENV_BACKENDS}/python"
+      if [[ -d "$python_dir" ]]; then
+        ln -sf "${python_dir}/triton_python_backend_stub" "${local_dir}/triton_python_backend_stub"
+        ln -sf "${python_dir}/triton_python_backend_utils.py" "${local_dir}/triton_python_backend_utils.py"
+        lib::verbose "  tier1: ${name} (python stub injected)"
+      else
+        lib::warn "  tier1: ${name} needs python backend stub but ${python_dir} not found"
+      fi
+    else
+      ln -sf "$entry" "${CACHE_BACKENDS}/${name}"
+      lib::verbose "  tier1: ${name} -> ${entry}"
+    fi
+
     tier1_names["$name"]=1
-    lib::verbose "  tier1: ${name} -> ${entry}"
   done
 fi
 
