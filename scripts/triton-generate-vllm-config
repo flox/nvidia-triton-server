@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+# triton-generate-vllm-config — Generate model.json for Flox-packaged vLLM models.
+#
+# Scans $TRITON_MODEL_REPOSITORY/*/model-defaults.json and generates 1/model.json
+# for each matching model directory. The "model" key is set to the resolved weights
+# path (Nix store symlink target). Package defaults are merged with TRITON_VLLM_CONFIG
+# env var overrides.
+#
+# Called from the Flox on-activate hook, after triton-setup-models.
+#
+# Required env:
+#   TRITON_MODEL_REPOSITORY   Base model repository path (e.g. $FLOX_ENV_CACHE/models)
+#
+# Optional env:
+#   TRITON_VLLM_CONFIG        JSON string merged on top of package defaults
+#   TRITON_MAX_TOKENS         Hard cap on max_new_tokens (via override_generation_config)
+
+set -euo pipefail
+
+# Resolve _lib.sh relative to this script's installed location.
+_self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "${_self_dir}/_lib.sh" ]]; then
+  # shellcheck source=_lib.sh
+  source "${_self_dir}/_lib.sh"
+else
+  # Fallback: running from project scripts/ dir, lib is in triton-server package
+  lib::log()     { printf '%s\n' "$*" >&2; }
+  lib::verbose() { :; }
+  lib::warn()    { printf 'WARNING: %s\n' "$*" >&2; }
+fi
+
+TRITON_MODEL_REPOSITORY="${TRITON_MODEL_REPOSITORY:-}"
+# Note: cannot use ${VAR:-{}} — bash parses the first } as closing ${}, leaving a trailing }.
+TRITON_VLLM_CONFIG="${TRITON_VLLM_CONFIG:-}"
+[[ -n "$TRITON_VLLM_CONFIG" ]] || TRITON_VLLM_CONFIG='{}'
+TRITON_MAX_TOKENS="${TRITON_MAX_TOKENS:-}"
+
+if [[ -z "$TRITON_MODEL_REPOSITORY" ]]; then
+  lib::warn "triton-generate-vllm-config: TRITON_MODEL_REPOSITORY is unset; skipping"
+  exit 0
+fi
+
+if [[ ! -d "$TRITON_MODEL_REPOSITORY" ]]; then
+  lib::warn "triton-generate-vllm-config: TRITON_MODEL_REPOSITORY does not exist: $TRITON_MODEL_REPOSITORY"
+  exit 0
+fi
+
+_found=0
+_generated=0
+
+for defaults_file in "$TRITON_MODEL_REPOSITORY"/*/model-defaults.json; do
+  [[ -f "$defaults_file" ]] || continue
+
+  _found=$((_found + 1))
+  model_dir="$(dirname "$defaults_file")"
+  model_name="$(basename "$model_dir")"
+
+  # Resolve the weights path (follow symlinks to Nix store)
+  weights_dir="$model_dir/weights"
+  if [[ ! -e "$weights_dir" ]]; then
+    lib::warn "triton-generate-vllm-config: ${model_name}: weights/ not found; skipping"
+    continue
+  fi
+  weights_path="$(readlink -f "$weights_dir")"
+
+  # Merge defaults + overrides + resolved model path using Python
+  final_json="$(python3 -c '
+import json, sys
+defaults = json.load(open(sys.argv[1]))
+overrides = json.loads(sys.argv[2])
+defaults.update(overrides)
+defaults["model"] = sys.argv[3]
+max_tokens = sys.argv[4] if len(sys.argv) > 4 else ""
+if max_tokens:
+    ogc = defaults.get("override_generation_config", {})
+    if isinstance(ogc, str):
+        ogc = json.loads(ogc)
+    ogc["max_new_tokens"] = int(max_tokens)
+    defaults["override_generation_config"] = ogc
+json.dump(defaults, sys.stdout, indent=2)
+' "$defaults_file" "$TRITON_VLLM_CONFIG" "$weights_path" "$TRITON_MAX_TOKENS")" || {
+    lib::warn "triton-generate-vllm-config: ${model_name}: failed to generate JSON; skipping"
+    continue
+  }
+
+  # Idempotency: compare input hash to cached hash
+  version_dir="$model_dir/1"
+  hash_file="$version_dir/.model-json-inputs-hash"
+  new_hash="$(printf '%s' "$final_json" | sha256sum | cut -d' ' -f1)"
+
+  if [[ -f "$hash_file" ]]; then
+    old_hash="$(cat "$hash_file")"
+    if [[ "$new_hash" == "$old_hash" ]]; then
+      lib::verbose "triton-generate-vllm-config: ${model_name}: unchanged"
+      continue
+    fi
+  fi
+
+  # Write model.json + hash
+  mkdir -p "$version_dir"
+  printf '%s\n' "$final_json" > "$version_dir/model.json"
+  printf '%s' "$new_hash" > "$hash_file"
+  lib::log "triton-generate-vllm-config: ${model_name}: generated 1/model.json"
+  if [[ -n "$TRITON_MAX_TOKENS" ]]; then
+    lib::log "triton-generate-vllm-config: ${model_name}: max_tokens cap = $TRITON_MAX_TOKENS"
+  fi
+  _generated=$((_generated + 1))
+done
+
+if (( _found == 0 )); then
+  lib::verbose "triton-generate-vllm-config: no model-defaults.json found; nothing to generate"
+fi

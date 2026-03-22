@@ -379,7 +379,8 @@ set(CMAKE_CUDA_ARCHITECTURES "80;86;89;90" CACHE STRING "")'
     cp ${../../scripts/triton-serve} $out/bin/triton-serve
     cp ${../../scripts/triton-setup-backends} $out/bin/triton-setup-backends
     cp ${../../scripts/triton-setup-models} $out/bin/triton-setup-models
-    chmod +x $out/bin/triton-{preflight,resolve-model,serve,setup-backends,setup-models}
+    cp ${../../scripts/triton-generate-vllm-config} $out/bin/triton-generate-vllm-config
+    chmod +x $out/bin/triton-{generate-vllm-config,preflight,resolve-model,serve,setup-backends,setup-models}
 
     # OpenAI-compatible frontend source
     mkdir -p $out/python/openai
