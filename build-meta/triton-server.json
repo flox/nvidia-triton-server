@@ -1,7 +1,7 @@
 {
-  "build_version": 60,
+  "build_version": 61,
   "force_increment": 0,
-  "git_rev": "1bbd78171b9dccf1d37050bfdc8b200ea4788c1e",
-  "git_rev_short": "1bbd781",
-  "changelog": "triton-serve: add TRITON_DEFAULT_MAX_TOKENS (default 1024) passed as --default-max-tokens to OpenAI frontend."
+  "git_rev": "4ee16e4115a6062bc689083f60135bbff9a2f864",
+  "git_rev_short": "4ee16e4",
+  "changelog": "triton-server: add triton-generate-vllm-config to package (available via PATH)."
 }
