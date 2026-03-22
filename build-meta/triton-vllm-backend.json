@@ -1,0 +1,7 @@
+{
+  "build_version": 1,
+  "force_increment": 0,
+  "git_rev": "5f540660480141d81a873cf9d1fde65c509e27c3",
+  "git_rev_short": "5f54066",
+  "changelog": "Initial build. vLLM Python backend (r26.02) packaged as a Nix derivation."
+}
